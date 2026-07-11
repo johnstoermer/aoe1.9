@@ -563,9 +563,9 @@ export class World {
 
   private completeTech(player: number, tech: TechId, b: Entity) {
     const p = this.players[player];
+    p.techs[tech] = true; // also for ages: age3 requires age2 via this flag
     if (tech === 'age2') p.age = Math.max(p.age, 1);
     else if (tech === 'age3') p.age = Math.max(p.age, 2);
-    else p.techs[tech] = true;
     this.ev(tech.startsWith('age') ? 'ageUp' : 'researchDone', b.x, b.y, { player, entType: tech });
   }
 

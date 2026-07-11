@@ -69,7 +69,7 @@ export interface BuildingVisual {
 export const BUILDING_VISUALS: Record<string, BuildingVisual> = {
   towncenter: { model: `${A}/buildings/{c}/building_townhall_{c}.gltf`, fit: 1.05, yaw: 0 },
   house: { model: `${A}/buildings/{c}/building_home_A_{c}.gltf`, fit: 0.95, yaw: 0 },
-  farm: { model: `${A}/buildings/neutral/building_grain.gltf`, fit: 1.25, yaw: 0 },
+  farm: { model: `${A}/buildings/neutral/building_grain.gltf`, fit: 0.98, yaw: 0 },
   lumbercamp: { model: `${A}/buildings/{c}/building_lumbermill_{c}.gltf`, fit: 1.0, yaw: 0 },
   minecamp: { model: `${A}/buildings/{c}/building_mine_{c}.gltf`, fit: 1.0, yaw: 0 },
   barracks: { model: `${A}/buildings/{c}/building_barracks_{c}.gltf`, fit: 1.0, yaw: 0 },

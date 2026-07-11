@@ -341,54 +341,80 @@ const MIME: Record<string, string> = {
   '.woff': 'font/woff', '.woff2': 'font/woff2', '.ico': 'image/x-icon',
 };
 
-const httpServer = createServer(async (req, res) => {
-  try {
-    const url = (req.url ?? '/').split('?')[0];
-    let file = normalize(join(DIST, url === '/' ? 'index.html' : url));
-    if (!file.startsWith(DIST)) { res.writeHead(403).end(); return; }
+export interface RunningServer {
+  port: number;
+  close(): Promise<void>;
+}
+
+export function startServer(port: number): Promise<RunningServer> {
+  const httpServer = createServer(async (req, res) => {
     try {
-      const s = await stat(file);
-      if (s.isDirectory()) file = join(file, 'index.html');
+      const url = (req.url ?? '/').split('?')[0];
+      let file = normalize(join(DIST, url === '/' ? 'index.html' : url));
+      if (!file.startsWith(DIST)) { res.writeHead(403).end(); return; }
+      try {
+        const s = await stat(file);
+        if (s.isDirectory()) file = join(file, 'index.html');
+      } catch {
+        file = join(DIST, 'index.html'); // SPA fallback
+      }
+      const data = await readFile(file);
+      res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream' });
+      res.end(data);
     } catch {
-      file = join(DIST, 'index.html'); // SPA fallback
-    }
-    const data = await readFile(file);
-    res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream' });
-    res.end(data);
-  } catch {
-    res.writeHead(404).end('not found');
-  }
-});
-
-const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
-
-wss.on('connection', (ws) => {
-  const peer: Peer = { id: peerSeq++, ws, name: 'Player', room: null, alive: true };
-  send(peer, { t: 'welcome', peer: peer.id, version: PROTOCOL_VERSION });
-
-  ws.on('message', (raw) => {
-    let msg: C2S;
-    try {
-      msg = JSON.parse(String(raw));
-    } catch {
-      return;
-    }
-    try {
-      handleMessage(peer, msg);
-    } catch (err) {
-      log(`error handling ${String((msg as { t?: string }).t)}: ${String(err)}`);
+      res.writeHead(404).end('not found');
     }
   });
-  ws.on('pong', () => { peer.alive = true; });
-  ws.on('close', () => {
-    if (peer.room) peer.room.removePeer(peer);
-    peer.room = null;
+
+  const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
+
+  wss.on('connection', (ws) => {
+    const peer: Peer = { id: peerSeq++, ws, name: 'Player', room: null, alive: true };
+    send(peer, { t: 'welcome', peer: peer.id, version: PROTOCOL_VERSION });
+
+    ws.on('message', (raw) => {
+      let msg: C2S;
+      try {
+        msg = JSON.parse(String(raw));
+      } catch {
+        return;
+      }
+      try {
+        handleMessage(peer, msg);
+      } catch (err) {
+        log(`error handling ${String((msg as { t?: string }).t)}: ${String(err)}`);
+      }
+    });
+    ws.on('pong', () => { peer.alive = true; });
+    ws.on('close', () => {
+      if (peer.room) peer.room.removePeer(peer);
+      peer.room = null;
+    });
   });
-});
 
-// keepalive: drop dead sockets so rooms don't hang
-setInterval(() => {
-  for (const ws of wss.clients) ws.ping();
-}, 15000);
+  // keepalive: drop dead sockets so rooms don't hang
+  const keepalive = setInterval(() => {
+    for (const ws of wss.clients) ws.ping();
+  }, 15000);
 
-httpServer.listen(PORT, () => log(`AOE 1.9 server listening on :${PORT} (ws path /ws)`));
+  return new Promise((resolve) => {
+    httpServer.listen(port, () => {
+      const actual = (httpServer.address() as { port: number }).port;
+      log(`AOE 1.9 server listening on :${actual} (ws path /ws)`);
+      resolve({
+        port: actual,
+        close: () => new Promise<void>((done) => {
+          clearInterval(keepalive);
+          for (const r of rooms.values()) r.close();
+          for (const ws of wss.clients) ws.terminate();
+          wss.close(() => httpServer.close(() => done()));
+        }),
+      });
+    });
+  });
+}
+
+// started directly (npm run dev/start) — not when imported by tests
+if (process.argv[1] && /main\.(ts|js)$/.test(process.argv[1])) {
+  void startServer(PORT);
+}

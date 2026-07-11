@@ -103,7 +103,12 @@ export function aiThink(world: World, pid: number) {
       world.applyCommand(pid, { t: 'train', building: b.id, unit: 'villager' });
     }
   }
-  trainMilitary(world, pid, completed, tune);
+  // once the economy can support aging up, bank food instead of spending
+  // every scrap on troops
+  const savingForAge =
+    (p.age === 0 && villagers.length >= tune.ageUpVillagers[0] && !world.techPending(pid, 'age2'))
+    || (p.age === 1 && villagers.length >= tune.ageUpVillagers[1] && !world.techPending(pid, 'age3'));
+  trainMilitary(world, pid, completed, savingForAge);
 
   // ---- combat --------------------------------------------------------------
   directArmy(world, pid, military, tc, tune);
@@ -296,13 +301,14 @@ function researchWants(world: World, pid: number, tc: Entity, smith: Entity | un
 
 function trainMilitary(
   world: World, pid: number,
-  completed: (t: BuildingTypeId) => Entity[], tune: AiTuning,
+  completed: (t: BuildingTypeId) => Entity[], savingForAge: boolean,
 ) {
   const p = world.players[pid];
-  // keep a small buffer so military doesn't starve the age-up
+  // keep a buffer so military doesn't starve the age-up
+  const reserve = savingForAge ? 420 : p.age < 2 ? 120 : 0;
   const buffered = (u: UnitTypeId) => {
     const c = UNITS[u].cost;
-    return world.canAfford(pid, { ...c, food: (c.food ?? 0) + (p.age < 2 ? 150 : 0) });
+    return world.canAfford(pid, { ...c, food: (c.food ?? 0) + reserve, gold: (c.gold ?? 0) + (savingForAge && p.age === 1 ? 160 : 0) });
   };
   for (const b of completed('barracks')) {
     if (b.trainQueue.length >= 2) continue;

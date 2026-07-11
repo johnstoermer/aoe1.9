@@ -30,6 +30,8 @@ export class LocalTransport implements Transport {
   private last = performance.now();
   private frames: Frame[] = [];
   readonly setup: GameSetup;
+  /** Game-speed multiplier (debug / spectate fast-forward). */
+  speed = 1;
 
   constructor(setup: GameSetup) {
     this.setup = setup;
@@ -37,7 +39,7 @@ export class LocalTransport implements Transport {
 
   pollFrames(): Frame[] {
     const now = performance.now();
-    this.acc += now - this.last;
+    this.acc += (now - this.last) * this.speed;
     this.last = now;
     // don't let a background tab burst thousands of ticks at once
     if (this.acc > 2000) this.acc = 2000;

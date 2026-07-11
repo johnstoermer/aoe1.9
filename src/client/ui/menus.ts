@@ -248,7 +248,7 @@ export class LobbyScreen {
 
     const codeRow = el('div', { class: 'field-row' });
     codeRow.appendChild(el('label', { text: 'Game code:' }));
-    this.codeSpan = el('b', { text: '----', style: 'font-size:16px; letter-spacing:3px;' });
+    this.codeSpan = el('b', { id: 'room-code', text: '----', style: 'font-size:16px; letter-spacing:3px;' });
     codeRow.appendChild(this.codeSpan);
     codeRow.appendChild(el('span', { text: ' — share it with your friends' }));
 

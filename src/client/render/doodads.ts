@@ -114,8 +114,8 @@ export class Doodads {
     const trees = nodeCount('tree') + 8;
     mk('tree0', 'tree0', Math.ceil(trees * 0.6), 1.15);
     mk('tree1', 'tree1', Math.ceil(trees * 0.6), 1.05);
-    mk('stump0', 'stump0', Math.ceil(trees * 0.7), 0.8);
-    mk('stump1', 'stump1', Math.ceil(trees * 0.7), 0.75);
+    mk('stump0', 'stump0', Math.ceil(trees * 0.7), 0.5);
+    mk('stump1', 'stump1', Math.ceil(trees * 0.7), 0.48);
     const gold = nodeCount('gold') + 4;
     mk('goldRock', 'goldRock0', gold, 0.95);
     mk('goldNug', 'gold0', gold * 2, 0.55);

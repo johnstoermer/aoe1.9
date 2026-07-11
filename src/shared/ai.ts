@@ -3,7 +3,7 @@
 // "computer player" rules: it sees the whole map but plays by the same
 // economy/combat mechanics.
 
-import { BUILDINGS, RESOURCE_NODES, TECHS, UNITS } from './data';
+import { BUILDINGS, RESOURCE_NODES, TECHS, UNITS, totalBuildTicks } from './data';
 import { FP_BITS, distSq, fp } from './fixed';
 import type { World } from './sim';
 import type { BuildingTypeId, Entity, Resource, TechId, UnitTypeId } from './types';
@@ -59,7 +59,12 @@ export function aiThink(world: World, pid: number) {
       if (e.type === 'towncenter' && world.isBuildingComplete(e)) tc = e;
     }
   }
-  if (!tc) return; // town center lost: fight with what remains
+  if (!tc) {
+    // town center lost: no economy left to run, but the army keeps fighting
+    const anchor = [...buildings.values()].flat()[0] ?? military[0];
+    if (anchor) directArmy(world, pid, military, anchor, tune);
+    return;
+  }
 
   const has = (t: BuildingTypeId) => (buildings.get(t) ?? []).some((b) => world.isBuildingComplete(b));
   const countAll = (t: BuildingTypeId) => (buildings.get(t) ?? []).length;
@@ -117,7 +122,7 @@ export function aiThink(world: World, pid: number) {
 // --------------------------------------------------------------------------
 
 function hasFoundation(buildings: Map<BuildingTypeId, Entity[]>, t: BuildingTypeId): boolean {
-  return (buildings.get(t) ?? []).some((b) => b.buildProgress < BUILDINGS[t].buildTime * 10);
+  return (buildings.get(t) ?? []).some((b) => b.buildProgress < totalBuildTicks(t));
 }
 
 /** Count wild food (berries) within ~10 tiles of the TC. */

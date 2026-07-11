@@ -10,7 +10,7 @@
 
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
-import { extname, join, normalize, resolve } from 'node:path';
+import { extname, join, normalize, resolve, sep } from 'node:path';
 import { WebSocket, WebSocketServer } from 'ws';
 import { DEFAULT_PORT, PROTOCOL_VERSION, type C2S, type RoomInfo, type S2C } from '../shared/protocol';
 import type { Command, Frame, GameSetup } from '../shared/types';
@@ -45,7 +45,6 @@ class Room {
   // in-game state
   tick = 0;
   pending = new Map<number, Command[]>(); // player index -> queued commands
-  history: Frame[] = [];
   hashes = new Map<number, Map<number, number>>(); // tick -> player -> hash
   desyncAnnounced = false;
   timer: ReturnType<typeof setInterval> | null = null;
@@ -123,7 +122,6 @@ class Room {
       }
     }
     const frame: Frame = { tick: this.tick++, commands };
-    this.history.push(frame);
     this.broadcast({ t: 'frame', frame });
   }
 
@@ -132,7 +130,7 @@ class Room {
     if (!perTick) this.hashes.set(tick, (perTick = new Map()));
     perTick.set(player, hash);
     const humans = this.slots.filter((s) => !s.isAI && s.peer).length;
-    if (perTick.size >= humans && humans > 1) {
+    if (perTick.size >= humans) {
       const values = [...perTick.values()];
       if (values.some((v) => v !== values[0]) && !this.desyncAnnounced) {
         this.desyncAnnounced = true;
@@ -141,10 +139,9 @@ class Room {
       }
       this.hashes.delete(tick);
     }
-    // drop stale hash records
-    if (this.hashes.size > 50) {
-      const oldest = Math.min(...this.hashes.keys());
-      this.hashes.delete(oldest);
+    // drop only records so old a lagging client can no longer complete them
+    for (const t of this.hashes.keys()) {
+      if (t < tick - 1200) this.hashes.delete(t);
     }
   }
 
@@ -315,7 +312,13 @@ function handleMessage(peer: Peer, msg: C2S) {
       if (player === -1 || !Array.isArray(msg.cmds) || msg.cmds.length === 0) return;
       const list = room.pending.get(player) ?? [];
       if (list.length > 200) return; // flood guard
-      list.push(...msg.cmds.slice(0, 50));
+      // shape check only — full validation is the sim's job, but garbage
+      // should not reach other clients at all
+      for (const cmd of msg.cmds.slice(0, 50)) {
+        if (cmd && typeof cmd === 'object' && !Array.isArray(cmd) && typeof cmd.t === 'string') {
+          list.push(cmd);
+        }
+      }
       room.pending.set(player, list);
       break;
     }
@@ -350,8 +353,8 @@ export function startServer(port: number): Promise<RunningServer> {
   const httpServer = createServer(async (req, res) => {
     try {
       const url = (req.url ?? '/').split('?')[0];
-      let file = normalize(join(DIST, url === '/' ? 'index.html' : url));
-      if (!file.startsWith(DIST)) { res.writeHead(403).end(); return; }
+      let file = normalize(join(DIST, url === '/' ? 'index.html' : decodeURIComponent(url)));
+      if (file !== DIST && !file.startsWith(DIST + sep)) { res.writeHead(403).end(); return; }
       try {
         const s = await stat(file);
         if (s.isDirectory()) file = join(file, 'index.html');
@@ -368,8 +371,11 @@ export function startServer(port: number): Promise<RunningServer> {
 
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
 
+  const peers = new Set<Peer>();
+
   wss.on('connection', (ws) => {
     const peer: Peer = { id: peerSeq++, ws, name: 'Player', room: null, alive: true };
+    peers.add(peer);
     send(peer, { t: 'welcome', peer: peer.id, version: PROTOCOL_VERSION });
 
     ws.on('message', (raw) => {
@@ -387,14 +393,22 @@ export function startServer(port: number): Promise<RunningServer> {
     });
     ws.on('pong', () => { peer.alive = true; });
     ws.on('close', () => {
+      peers.delete(peer);
       if (peer.room) peer.room.removePeer(peer);
       peer.room = null;
     });
   });
 
-  // keepalive: drop dead sockets so rooms don't hang
+  // keepalive: terminate sockets that stop answering pings so rooms don't hang
   const keepalive = setInterval(() => {
-    for (const ws of wss.clients) ws.ping();
+    for (const peer of peers) {
+      if (!peer.alive) {
+        peer.ws.terminate(); // triggers 'close' → removePeer
+        continue;
+      }
+      peer.alive = false;
+      peer.ws.ping();
+    }
   }, 15000);
 
   return new Promise((resolve) => {

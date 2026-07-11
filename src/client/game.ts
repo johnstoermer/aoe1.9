@@ -5,12 +5,12 @@
 // transport. Works identically for single-player and multiplayer.
 
 import * as THREE from 'three';
-import { AGE_NAMES, BUILDINGS, PLAYER_COLORS, UNITS, isBuildingType } from '../shared/data';
+import { AGE_NAMES, BUILDINGS, PLAYER_COLORS, UNITS, isBuildingType, totalBuildTicks } from '../shared/data';
 import { FP, FP_BITS, fp, toTiles } from '../shared/fixed';
 import { HASH_PERIOD } from '../shared/protocol';
 import { World } from '../shared/sim';
 import type { BuildingTypeId, Command, Entity, GameSetup, SimEvent, TechId, UnitTypeId } from '../shared/types';
-import { TICK_MS } from '../shared/types';
+import { TICK_MS, TICK_RATE } from '../shared/types';
 import { audio } from './audio';
 import { loadAnimationLibrary, loadModel } from './assets';
 import { BuildingView, RubbleView, loadBuildingModels, loadRubbleModel } from './render/buildings';
@@ -124,8 +124,8 @@ export class GameClient {
     await loadRubbleModel().catch(() => null);
     tick('Buildings');
     await Promise.all(this.world.players.map((p) =>
-      loadProjectileModel({ type: 'arrow', owner: p.color } as Entity).catch(() => null)));
-    await loadProjectileModel({ type: 'boulder', owner: 0 } as Entity).catch(() => null);
+      loadProjectileModel('arrow', p.color).catch(() => null)));
+    await loadProjectileModel('boulder', 0).catch(() => null);
     tick('Projectiles');
 
     // scene assembly
@@ -181,7 +181,8 @@ export class GameClient {
       this.renderer.scene.add(view.group);
     } else if (e.kind === 'projectile' && !this.projViews.has(e.id)) {
       this.projViews.set(e.id, null as unknown as ProjectileView);
-      const model = await loadProjectileModel(e).catch(() => fallbackModel(0x333333));
+      const color = e.owner >= 0 ? this.world.players[e.owner].color : 0;
+      const model = await loadProjectileModel(e.type, color).catch(() => fallbackModel(0x333333));
       if (this.disposed || !this.world.entities.has(e.id)) { this.projViews.delete(e.id); return; }
       const view = new ProjectileView(e, model);
       this.projViews.set(e.id, view);
@@ -307,7 +308,7 @@ export class GameClient {
         const unitData = UNITS[e.type as UnitTypeId];
         const anims = viewAnims(e.type);
         if (vis) {
-          view.setLoop(anims.move, 0.14, Math.max(0.7, toTiles(unitData.speed) * 15 / 1.1));
+          view.setLoop(anims.move, 0.14, Math.max(0.7, toTiles(unitData.speed) * TICK_RATE / 1.1));
         } else if (e.order !== 'gather' && e.order !== 'build') {
           view.setLoop(anims.idle);
         }
@@ -396,7 +397,7 @@ export class GameClient {
             const anims = viewAnims(e.type).attack;
             if (anims && anims.length > 0) {
               const clip = anims[(ev.ent! * 31 + this.world.tick) % anims.length];
-              const dur = UNITS[e.type as UnitTypeId].swingTime / 15 + 0.25;
+              const dur = UNITS[e.type as UnitTypeId].swingTime / TICK_RATE + 0.25;
               view.playOnce(clip, dur);
             }
             if (visible) {
@@ -941,7 +942,7 @@ export class GameClient {
       ctx.fillStyle = pct > 0.55 ? '#20c030' : pct > 0.25 ? '#d0c020' : '#d03020';
       ctx.fillRect(x, y, Math.round(bw * pct), 3);
       if (foundation) {
-        const total = BUILDINGS[e.type as BuildingTypeId].buildTime * 10;
+        const total = totalBuildTicks(e.type as BuildingTypeId);
         const bp = e.buildProgress / total;
         ctx.fillStyle = '#000';
         ctx.fillRect(x - 1, y + 5, bw + 2, 5);

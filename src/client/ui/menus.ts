@@ -38,7 +38,10 @@ function taskbar(label: string): HTMLElement {
   const task = el('button', { class: 'task-item active', text: label });
   const tray = el('div', { class: 'tray' });
   const clock = el('span', { text: timeString() });
-  setInterval(() => { clock.textContent = timeString(); }, 20000);
+  const timer = setInterval(() => {
+    if (!clock.isConnected) { clearInterval(timer); return; } // screen was torn down
+    clock.textContent = timeString();
+  }, 20000);
   tray.append(el('span', { text: '🔊' }), clock);
   bar.append(start, task, tray);
   return bar;

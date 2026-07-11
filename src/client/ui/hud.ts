@@ -14,7 +14,7 @@ import { buildingModelPath } from '../render/buildings';
 import { modelPathFor } from '../render/units';
 import { applyTeamColor } from '../assets';
 import { fitTo } from '../render/units';
-import { bindTooltip, confirmDialog, costText, el, makeWindow, modal, toast } from './widgets';
+import { bindTooltip, confirmDialog, costText, el, hideTooltip, makeWindow, modal, toast } from './widgets';
 
 const MINIMAP_SIZE = 176;
 
@@ -36,7 +36,7 @@ export class Hud {
   private hotkeyMap = new Map<string, () => void>();
   private minimapTimer = 0;
   private refreshTimer = 0;
-  private menuOpen = false;
+  private disposers: (() => void)[] = [];
   onSendChat: ((text: string) => void) | null = null;
   onQuit: () => void = () => {};
 
@@ -53,7 +53,18 @@ export class Hud {
     this.update(0.05);
   }
 
+  /** Register a window-level listener that dies with this Hud. */
+  private listen(target: EventTarget, type: string, fn: (e: Event) => void) {
+    target.addEventListener(type, fn);
+    this.disposers.push(() => target.removeEventListener(type, fn));
+  }
+
   dispose() {
+    this.disposers.forEach((d) => d());
+    this.disposers.length = 0;
+    hideTooltip();
+    // any modal this Hud opened (menu, game over) must not outlive it
+    document.querySelectorAll('.modal-backdrop').forEach((m) => m.remove());
     this.root.remove();
   }
 
@@ -130,13 +141,13 @@ export class Hud {
         this.game.focusCamera(x, y);
       }
     });
-    window.addEventListener('pointermove', (e) => {
+    this.listen(window, 'pointermove', (e) => {
       if (dragging) {
         const { x, y } = toWorld(e as MouseEvent);
         this.game.focusCamera(x, y);
       }
     });
-    window.addEventListener('pointerup', () => { dragging = false; });
+    this.listen(window, 'pointerup', () => { dragging = false; });
   }
 
   /** Terrain + resources baked once (nodes rarely change enough to matter). */
@@ -234,6 +245,7 @@ export class Hud {
 
   /** Rebuild the panel + command card from the current selection. */
   refresh() {
+    hideTooltip(); // hovered elements are about to be replaced
     this.hotkeyMap.clear();
     this.selInfo.textContent = '';
     this.cmdGrid.textContent = '';
@@ -303,8 +315,10 @@ export class Hud {
     const rows = el('div', { class: 'portrait-row' });
     rows.appendChild(el('img', { class: 'portrait', src: this.entIcon(e) }));
     const info = el('div');
-    info.appendChild(el('div', { html: `<b>${name ?? e.type}</b>` }));
-    info.appendChild(el('div', { html: `<span style="color:${ownerColor}">■</span> ${ownerName}` }));
+    info.appendChild(el('div', {}, el('b', { text: name ?? e.type })));
+    const ownerLine = el('div', {});
+    ownerLine.append(el('span', { style: `color:${ownerColor}`, text: '■ ' }), ownerName);
+    info.appendChild(ownerLine);
     if (e.kind === 'unit') {
       const d = UNITS[e.type as UnitTypeId];
       info.appendChild(el('div', { text: `Attack ${d.attack}  Armor ${d.armor}` }));
@@ -508,7 +522,8 @@ export class Hud {
     this.chatInputRow.appendChild(this.chatInput);
     this.root.append(this.chatLog, this.chatInputRow);
 
-    window.addEventListener('keydown', (e) => {
+    this.listen(window, 'keydown', (ev) => {
+      const e = ev as KeyboardEvent;
       if (e.key !== 'Enter' || !this.onSendChat) return;
       const active = document.activeElement === this.chatInput;
       if (active) {
@@ -536,10 +551,9 @@ export class Hud {
   // -------------------------------------------------------------------------
 
   private openMenu() {
-    if (this.menuOpen) return;
-    this.menuOpen = true;
+    if (document.querySelector('.modal-backdrop')) return; // one modal at a time
     audio.play('uiOpen');
-    const close = modal('Game Menu', (body, done) => {
+    modal('Game Menu', (body, done) => {
       const resume = el('button', { text: 'Resume Game' });
       resume.addEventListener('click', done);
 
@@ -579,27 +593,21 @@ export class Hud {
       if (speedRow) body.append(speedRow);
       body.append(resign, quit);
     });
-    // re-arm flag when modal is removed
-    const orig = close;
-    void orig;
-    const obs = new MutationObserver(() => {
-      if (!document.querySelector('.modal-backdrop')) {
-        this.menuOpen = false;
-        obs.disconnect();
-      }
-    });
-    obs.observe(document.getElementById('ui-root')!, { childList: true });
   }
 
   showGameOver(winner: number) {
     const world = this.game.world;
     const youWon = winner === this.game.you;
     modal(youWon ? 'Victory!' : 'Defeat', (body) => {
-      body.appendChild(el('p', {
-        html: winner >= 0
-          ? `<b>${world.players[winner].name}</b> ${youWon ? '— you are victorious!' : 'has conquered the known world.'}`
+      // player names are remote input — never innerHTML them
+      const headline = el('p', {});
+      headline.append(
+        el('b', { text: winner >= 0 ? world.players[winner].name : '' }),
+        winner >= 0
+          ? (youWon ? ' — you are victorious!' : ' has conquered the known world.')
           : 'The game has ended.',
-      }));
+      );
+      body.appendChild(headline);
       const table = el('table', { class: 'stats-table' });
       table.appendChild(el('tr', {},
         el('th', { text: 'Player' }), el('th', { text: 'Age' }), el('th', { text: 'Gathered' }),
@@ -607,8 +615,13 @@ export class Hud {
       ));
       for (const p of world.players) {
         const gathered = Object.values(p.stats.gathered).reduce((a, b) => a + b, 0);
+        const nameCell = el('td', {});
+        nameCell.append(
+          el('span', { style: `color:${PLAYER_COLORS[p.color].css}`, text: '■ ' }),
+          `${p.name}${p.id === winner ? ' 👑' : ''}`,
+        );
         table.appendChild(el('tr', {},
-          el('td', { html: `<span style="color:${PLAYER_COLORS[p.color].css}">■</span> ${p.name}${p.id === winner ? ' 👑' : ''}` }),
+          nameCell,
           el('td', { text: AGE_NAMES[p.age] }),
           el('td', { text: String(gathered) }),
           el('td', { text: String(p.stats.unitsTrained) }),
@@ -642,7 +655,7 @@ export class Hud {
 
   onEscape(): boolean {
     const backdrop = document.querySelector('.modal-backdrop');
-    if (backdrop) { backdrop.remove(); this.menuOpen = false; return true; }
+    if (backdrop) { backdrop.remove(); return true; }
     return false;
   }
 

@@ -9,19 +9,37 @@ import type { Entity } from '../../shared/types';
 import { applyTeamColor, getClip, instantiate, loadModel, ps1ify, type LoadedModel } from '../assets';
 import { ARROW_MODEL, BOULDER_MODEL, UNIT_VISUALS } from '../visuals';
 
+// Geometries and helper materials are shared across all unit views (units
+// are created and destroyed constantly; per-view geometry would leak GPU
+// buffers since three.js only frees them on explicit dispose()).
 let blobShadowMat: THREE.MeshBasicMaterial | null = null;
+let blobShadowGeo: THREE.CircleGeometry | null = null;
+const pickGeoCache = new Map<string, THREE.CylinderGeometry>();
+const pickMat = new THREE.MeshBasicMaterial();
+pickMat.visible = false;
 
 function makeBlobShadow(radius: number): THREE.Mesh {
   if (!blobShadowMat) {
     blobShadowMat = new THREE.MeshBasicMaterial({
       color: 0x1a2418, transparent: true, opacity: 0.34, depthWrite: false,
     });
+    blobShadowGeo = new THREE.CircleGeometry(1, 12);
   }
-  const m = new THREE.Mesh(new THREE.CircleGeometry(radius, 12), blobShadowMat);
+  const m = new THREE.Mesh(blobShadowGeo!, blobShadowMat);
+  m.scale.setScalar(radius);
   m.rotation.x = -Math.PI / 2;
   m.position.y = 0.03;
   m.renderOrder = 2;
   return m;
+}
+
+function pickGeoFor(type: string, radius: number, height: number): THREE.CylinderGeometry {
+  let g = pickGeoCache.get(type);
+  if (!g) {
+    g = new THREE.CylinderGeometry(radius, radius, height, 6);
+    pickGeoCache.set(type, g);
+  }
+  return g;
 }
 
 /** Fit an object so its bounding height (or width) matches the target. */
@@ -89,10 +107,7 @@ export class UnitView {
     }
 
     // invisible cylinder for mouse picking
-    const pickGeo = new THREE.CylinderGeometry(Math.max(0.3, r * 1.5), Math.max(0.3, r * 1.5), v.height + 0.25, 6);
-    const pickMat = new THREE.MeshBasicMaterial();
-    pickMat.visible = false;
-    this.pickMesh = new THREE.Mesh(pickGeo, pickMat);
+    this.pickMesh = new THREE.Mesh(pickGeoFor(ent.type, Math.max(0.3, r * 1.5), v.height + 0.25), pickMat);
     this.pickMesh.position.y = v.height / 2;
     this.pickMesh.userData.entId = ent.id;
     this.group.add(this.pickMesh);
@@ -115,7 +130,7 @@ export class UnitView {
   }
 
   setLoop(name: string, fade = 0.16, timeScale = 1) {
-    if (!this.mixer || (this.currentLoop === name && !this.oneShot)) {
+    if (!this.mixer || this.currentLoop === name) {
       const cur = this.action(name);
       if (cur) cur.timeScale = timeScale;
       return;
@@ -151,9 +166,13 @@ export class UnitView {
     const onDone = (e: { action: THREE.AnimationAction }) => {
       if (e.action !== a) return;
       this.mixer!.removeEventListener('finished', onDone);
+      if (this.dead) return; // death pose owns the rig now
       a.fadeOut(0.14);
-      if (loop) loop.setEffectiveWeight(1);
-      this.oneShot = null;
+      // only restore if a newer one-shot hasn't taken over
+      if (this.oneShot === a) {
+        if (loop && this.currentLoop === loop.getClip().name) loop.setEffectiveWeight(1);
+        this.oneShot = null;
+      }
     };
     this.mixer.addEventListener('finished', onDone);
   }
@@ -165,6 +184,7 @@ export class UnitView {
 
   playDeath() {
     this.dead = true;
+    this.oneShot = null;
     if (!this.mixer) {
       // catapult: tip over
       return;
@@ -253,9 +273,10 @@ export async function loadUnitModel(type: string, owner: number, entId: number):
   return loadModel(modelPathFor(type, owner, entId));
 }
 
-export async function loadProjectileModel(ent: Entity): Promise<LoadedModel> {
-  if (ent.type === 'boulder') return loadModel(BOULDER_MODEL);
-  return loadModel(ARROW_MODEL(Math.max(0, ent.owner)));
+/** `color` is the player color index (not the player index). */
+export async function loadProjectileModel(type: string, color: number): Promise<LoadedModel> {
+  if (type === 'boulder') return loadModel(BOULDER_MODEL);
+  return loadModel(ARROW_MODEL(Math.max(0, color)));
 }
 
 /** Fallback capsule so a missing model never crashes the game. */

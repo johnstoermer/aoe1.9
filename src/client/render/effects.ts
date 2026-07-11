@@ -274,8 +274,10 @@ export class SelectionRings {
   readonly mesh: THREE.InstancedMesh;
   private mat4 = new THREE.Matrix4();
   private color = new THREE.Color();
+  private capacity: number;
 
   constructor(capacity = 220) {
+    this.capacity = capacity;
     const geo = new THREE.RingGeometry(0.82, 1, 20);
     geo.rotateX(-Math.PI / 2);
     const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.85, depthWrite: false });
@@ -292,7 +294,7 @@ export class SelectionRings {
 
   add(x: number, y: number, radius: number, colorHex: number) {
     const i = this.mesh.count;
-    if (i >= 220) return;
+    if (i >= this.capacity) return;
     this.mat4.makeScale(radius, 1, radius);
     this.mat4.setPosition(x, 0.045, y);
     this.mesh.setMatrixAt(i, this.mat4);

@@ -9,7 +9,7 @@
 
 import {
   BUILDINGS, CARRY_CAPACITY, FARM_GATHER_TICKS, RESOURCE_NODES, START_STOCK,
-  START_VILLAGERS, TECHS, UNITS, buildRate, isBuildingType, isUnitType,
+  START_VILLAGERS, TECHS, UNITS, buildRate, isBuildingType, isUnitType, totalBuildTicks,
 } from './data';
 import { FP, FP_BITS, clamp, dist, distSq, fp, isqrt, scaleTo } from './fixed';
 import { GameMap, dirCos, dirSin, generateMap } from './map';
@@ -144,7 +144,7 @@ export class World {
     e.tileX = tx;
     e.tileY = ty;
     e.maxHp = d.hp;
-    e.buildProgress = completed ? d.buildTime * 10 : 0;
+    e.buildProgress = completed ? totalBuildTicks(type) : 0;
     e.hp = completed ? d.hp : Math.max(1, d.hp >> 3);
     if (type !== 'farm') this.grid.setRect(tx, ty, d.w, d.h, 1);
     this.buildingIds.push(e.id); // keep the per-tick index coherent mid-tick
@@ -156,7 +156,7 @@ export class World {
   // -------------------------------------------------------------------------
 
   isBuildingComplete(e: Entity): boolean {
-    return e.kind === 'building' && e.buildProgress >= BUILDINGS[e.type as BuildingTypeId].buildTime * 10;
+    return e.kind === 'building' && e.buildProgress >= totalBuildTicks(e.type as BuildingTypeId);
   }
 
   footprint(e: Entity): { x: number; y: number; w: number; h: number } {
@@ -208,8 +208,8 @@ export class World {
     if (tech === 'age2' && this.players[player].age >= 1) return true;
     if (tech === 'age3' && this.players[player].age >= 2) return true;
     for (const id of this.buildingIds) {
-      const b = this.entities.get(id)!;
-      if (b.owner === player && b.trainQueue.some((q) => q.tech === tech)) return true;
+      const b = this.entities.get(id); // id may be stale within a tick (razed/deleted)
+      if (b && b.owner === player && b.trainQueue.some((q) => q.tech === tech)) return true;
     }
     return false;
   }
@@ -220,7 +220,8 @@ export class World {
     if (!this.grid.rectFree(tx, ty, d.w, d.h)) return false;
     // farms don't block the grid, but must not overlap other farms/foundations
     for (const id of this.buildingIds) {
-      const b = this.entities.get(id)!;
+      const b = this.entities.get(id); // id may be stale within a tick (razed/deleted)
+      if (!b) continue;
       const bd = BUILDINGS[b.type as BuildingTypeId];
       if (b.tileX < tx + d.w && tx < b.tileX + bd.w && b.tileY < ty + d.h && ty < b.tileY + bd.h) return false;
     }
@@ -241,7 +242,15 @@ export class World {
     this.rebuildIndexes();
 
     for (const fc of frame.commands) {
-      for (const cmd of fc.cmds) this.applyCommand(fc.player, cmd);
+      for (const cmd of fc.cmds) {
+        // a malformed command must never crash the sim — and because every
+        // client sees the same frame, catching is itself deterministic
+        try {
+          this.applyCommand(fc.player | 0, cmd);
+        } catch {
+          // ignore hostile/garbage input
+        }
+      }
     }
     for (const p of this.players) {
       if (p.isAI && p.alive && this.tick > TICK_RATE && (this.tick + p.id * 3) % (p.aiLevel >= 2 ? 10 : 15) === 0) {
@@ -379,8 +388,9 @@ export class World {
       }
       case 'cancelqueue': {
         const b = this.entities.get(cmd.building);
-        if (!b || b.owner !== player || cmd.index >= b.trainQueue.length) return;
-        const item = b.trainQueue.splice(cmd.index, 1)[0];
+        const index = cmd.index | 0;
+        if (!b || b.owner !== player || index < 0 || index >= b.trainQueue.length) return;
+        const item = b.trainQueue.splice(index, 1)[0];
         this.refund(player, item.unit ? UNITS[item.unit].cost : TECHS[item.tech!].cost);
         break;
       }
@@ -415,6 +425,7 @@ export class World {
 
   private ownedUnits(player: number, ids: number[]): Entity[] {
     const out: Entity[] = [];
+    if (!Array.isArray(ids)) return out;
     for (const id of ids.slice(0, 80)) {
       const e = this.entities.get(id);
       if (e && e.kind === 'unit' && e.owner === player) out.push(e);
@@ -483,14 +494,16 @@ export class World {
       const b = this.entities.get(id);
       if (!b) continue;
       const d = BUILDINGS[b.type as BuildingTypeId];
-      const total = d.buildTime * 10;
+      const total = totalBuildTicks(b.type as BuildingTypeId);
 
       if (b.buildProgress < total) {
         const builders = this.buildersByTarget.get(b.id) ?? 0;
         if (builders > 0) {
+          const before = b.buildProgress;
           b.buildProgress = Math.min(total, b.buildProgress + buildRate(builders));
-          // hp scales up with progress toward max
-          b.hp = Math.min(d.hp, Math.max(b.hp, Math.trunc((d.hp * b.buildProgress) / total)));
+          // hp grows with the work done; combat damage persists instead of
+          // being healed back by the progress-scaled floor
+          b.hp = Math.min(d.hp, b.hp + Math.max(1, Math.trunc((d.hp * (b.buildProgress - before)) / total)));
           if (b.buildProgress >= total) {
             this.ev('buildingDone', b.x, b.y, { ent: b.id, entType: b.type, player: b.owner });
           }
@@ -647,7 +660,11 @@ export class World {
       u.path.length = 0;
       const data = isFarm ? null : RESOURCE_NODES[node!.type as keyof typeof RESOURCE_NODES];
       const ticksPer = isFarm ? FARM_GATHER_TICKS : data!.gatherTicks;
-      u.carryKind = isFarm ? 'food' : data!.gives;
+      const gives = isFarm ? 'food' : data!.gives;
+      if (u.carryKind !== gives) {
+        u.carry = 0; // switching resource types dumps the old load
+        u.carryKind = gives;
+      }
       if (++u.gatherTimer >= ticksPer) {
         u.gatherTimer = 0;
         u.carry++;

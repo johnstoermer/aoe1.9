@@ -2,7 +2,7 @@
 // final colored model), damage smoke/fire anchors, rally flags, rubble.
 
 import * as THREE from 'three';
-import { BUILDINGS } from '../../shared/data';
+import { BUILDINGS, totalBuildTicks } from '../../shared/data';
 import type { BuildingTypeId, Entity } from '../../shared/types';
 import { instantiate, loadModel, type LoadedModel } from '../assets';
 import { BUILDING_VISUALS, CONSTRUCTION_MODELS, FLAG_MODEL, RUBBLE_MODEL } from '../visuals';
@@ -95,7 +95,7 @@ export class BuildingView {
 
   /** Swap visible model by construction progress. */
   setProgress(ent: Entity, force = false) {
-    const total = BUILDINGS[ent.type as BuildingTypeId].buildTime * 10;
+    const total = totalBuildTicks(ent.type as BuildingTypeId);
     const pct = ent.buildProgress / total;
     const stage = pct >= 1 ? 3 : pct > 0.7 ? 2 : pct > 0.35 ? 1 : 0;
     if (stage === this.stage && !force) return;

@@ -200,10 +200,20 @@ export const COLOR_KEYS = ['blue', 'red', 'green', 'yellow'] as const;
 export const START_STOCK: Record<Resource, number> = { food: 250, wood: 250, gold: 100, stone: 50 };
 export const START_VILLAGERS = 4;
 
+// Construction progress is tracked in tenths of a villager-tick so that
+// diminishing returns stay integer. Everything touching buildProgress goes
+// through these two helpers.
+export const BUILD_SCALE = 10;
+
 /** Diminishing returns for multiple villagers on one construction site. */
 export function buildRate(builders: number): number {
-  // 1 builder = 1x, each extra adds 60%: 1, 1.6, 2.2, ... (scaled by 10 to stay integer)
-  return 10 + (builders - 1) * 6;
+  // 1 builder = 1x, each extra adds 60%: 1, 1.6, 2.2, ...
+  return BUILD_SCALE + (builders - 1) * 6;
+}
+
+/** Total buildProgress a building needs to be complete. */
+export function totalBuildTicks(type: BuildingTypeId): number {
+  return BUILDINGS[type].buildTime * BUILD_SCALE;
 }
 
 export const isUnitType = (t: string): t is UnitTypeId => t in UNITS;

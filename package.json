@@ -1,0 +1,32 @@
+{
+  "name": "aoe1.9",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AOE 1.9 — a streamlined open-source RTS in the spirit of Age of Empires II. Three.js, deterministic lockstep multiplayer, PS1-era visuals, Windows 98 UI.",
+  "scripts": {
+    "dev": "concurrently -k -n server,client \"tsx watch src/server/main.ts\" \"vite\"",
+    "dev:client": "vite",
+    "dev:server": "tsx watch src/server/main.ts",
+    "build": "tsc --noEmit && vite build",
+    "start": "NODE_ENV=production tsx src/server/main.ts",
+    "assets": "node tools/prepare-assets.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "98.css": "^0.1.20",
+    "three": "^0.166.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "@types/three": "^0.166.0",
+    "@types/ws": "^8.5.12",
+    "concurrently": "^9.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.8",
+    "vitest": "^2.1.1"
+  }
+}

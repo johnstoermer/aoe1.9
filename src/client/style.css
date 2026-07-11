@@ -1,0 +1,563 @@
+/* AOE 1.9 — global styles. The Win98 look comes from 98.css; everything here
+   is layout plus the handful of game-specific widgets. */
+
+@import '98.css';
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #008080; /* the teal */
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+#game-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  outline: none;
+}
+
+#overlay-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+#ui-root {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font-smooth: never;
+  -webkit-font-smoothing: none;
+}
+
+#ui-root > * {
+  pointer-events: auto;
+}
+
+/* --- screens ------------------------------------------------------------ */
+
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+.screen.desktop {
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(255, 255, 255, 0.06), transparent 60%),
+    #008080;
+}
+
+.title-block {
+  text-align: center;
+  margin-bottom: 12px;
+  user-select: none;
+}
+
+.title-block h1 {
+  font-family: 'Pixelated MS Sans Serif', Arial, sans-serif;
+  font-size: 42px;
+  letter-spacing: 2px;
+  color: #fff;
+  margin: 0;
+  text-shadow: 2px 2px 0 #000, 4px 4px 0 rgba(0, 0, 0, 0.35);
+}
+
+.title-block .subtitle {
+  color: #c0e0e0;
+  text-shadow: 1px 1px 0 #004040;
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.menu-window {
+  width: 340px;
+}
+
+.menu-window .window-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.menu-window button {
+  width: 100%;
+  height: 30px;
+  font-size: 13px;
+}
+
+.window .field-row {
+  align-items: center;
+}
+
+/* fake taskbar */
+.taskbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 30px;
+  background: silver;
+  box-shadow: inset 0 1px 0 #fff, inset 0 2px 0 #dfdfdf, 0 -1px 0 #000;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  z-index: 50;
+}
+
+.taskbar .start-button {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: bold;
+  padding: 0 8px;
+}
+
+.taskbar .tray {
+  margin-left: auto;
+  height: 24px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: inset 1px 1px 0 #808080, inset -1px -1px 0 #fff;
+  font-size: 11px;
+}
+
+.taskbar .task-item {
+  height: 24px;
+  padding: 0 10px;
+  max-width: 200px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* --- HUD ----------------------------------------------------------------- */
+
+#hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+#hud > * {
+  pointer-events: auto;
+}
+
+.resource-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  background: silver;
+  box-shadow: inset 0 -1px 0 #808080, inset 0 1px 0 #fff, 0 1px 0 #000;
+  font-size: 12px;
+}
+
+.resource-bar .res {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px 1px 3px;
+  min-width: 78px;
+  box-shadow: inset 1px 1px 0 #808080, inset -1px -1px 0 #fff;
+  background: #d4d0c8;
+}
+
+.resource-bar .res img {
+  width: 20px;
+  height: 20px;
+  image-rendering: pixelated;
+}
+
+.resource-bar .res .low {
+  color: #a00000;
+}
+
+.resource-bar .age-label {
+  margin-left: 6px;
+  font-weight: bold;
+  padding: 2px 8px;
+}
+
+.resource-bar .spacer {
+  flex: 1;
+}
+
+.resource-bar button {
+  min-width: 0;
+  height: 24px;
+  padding: 0 10px;
+}
+
+.hud-window {
+  position: absolute;
+  pointer-events: auto;
+}
+
+.hud-window .window-body {
+  margin: 3px;
+}
+
+#minimap-window {
+  left: 4px;
+  bottom: 4px;
+}
+
+#minimap-canvas {
+  display: block;
+  image-rendering: pixelated;
+  cursor: crosshair;
+  border: 1px solid #000;
+}
+
+#panel-window {
+  right: 4px;
+  bottom: 4px;
+  width: 420px;
+}
+
+#panel-window .window-body {
+  display: flex;
+  gap: 6px;
+  min-height: 148px;
+}
+
+.sel-info {
+  width: 152px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+}
+
+.sel-info .portrait-row {
+  display: flex;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.sel-info .portrait {
+  width: 56px;
+  height: 56px;
+  image-rendering: pixelated;
+  background: #7d97a5;
+  box-shadow: inset 1px 1px 0 #808080, inset -1px -1px 0 #fff;
+}
+
+.sel-info .hpbar {
+  height: 10px;
+  background: #400000;
+  box-shadow: inset 1px 1px 0 #000;
+  position: relative;
+}
+
+.sel-info .hpbar > div {
+  position: absolute;
+  inset: 1px;
+  transform-origin: left;
+  background: #00a000;
+}
+
+.sel-multi {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  overflow-y: auto;
+  max-height: 120px;
+}
+
+.sel-multi img {
+  width: 28px;
+  height: 28px;
+  image-rendering: pixelated;
+  background: #7d97a5;
+  box-shadow: inset 1px 1px 0 #808080, inset -1px -1px 0 #fff;
+  cursor: pointer;
+}
+
+.sel-multi img.dim {
+  opacity: 0.55;
+}
+
+.cmd-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 52px);
+  grid-template-rows: repeat(3, 52px);
+  gap: 3px;
+  align-content: start;
+}
+
+.cmd-btn {
+  position: relative;
+  min-width: 0;
+  padding: 0;
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cmd-btn img {
+  width: 44px;
+  height: 44px;
+  image-rendering: pixelated;
+}
+
+.cmd-btn .hotkey {
+  position: absolute;
+  right: 2px;
+  top: 1px;
+  font-size: 10px;
+  background: rgba(255, 255, 224, 0.9);
+  padding: 0 2px;
+  border: 1px solid #888;
+}
+
+.cmd-btn .count {
+  position: absolute;
+  left: 2px;
+  bottom: 1px;
+  font-size: 10px;
+  background: rgba(255, 255, 224, 0.9);
+  padding: 0 2px;
+  border: 1px solid #888;
+}
+
+.cmd-btn:disabled img {
+  filter: grayscale(1) brightness(1.15);
+}
+
+.cmd-btn.progress::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  bottom: 2px;
+  height: 4px;
+  background: linear-gradient(to right, #000080 var(--pct, 0%), #d4d0c8 var(--pct, 0%));
+  border: 1px solid #404040;
+}
+
+.queue-row {
+  display: flex;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+.queue-row img {
+  width: 24px;
+  height: 24px;
+  image-rendering: pixelated;
+  background: #7d97a5;
+  box-shadow: inset 1px 1px 0 #808080, inset -1px -1px 0 #fff;
+  cursor: pointer;
+}
+
+/* tooltip */
+#tooltip {
+  position: fixed;
+  z-index: 200;
+  pointer-events: none;
+  background: #ffffe1;
+  color: #000;
+  border: 1px solid #000;
+  padding: 4px 6px;
+  font-size: 11px;
+  font-family: 'Pixelated MS Sans Serif', Arial, sans-serif;
+  max-width: 260px;
+  display: none;
+  white-space: pre-line;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.3);
+}
+
+/* alerts / toasts */
+#alerts {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 190px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.alert-toast {
+  background: #ffffe1;
+  border: 1px solid #000;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.35);
+  padding: 3px 10px;
+  font-size: 12px;
+  animation: toast-in 0.12s steps(2) both;
+}
+
+.alert-toast.warn {
+  background: #ffd8d0;
+}
+
+@keyframes toast-in {
+  from { transform: translateY(6px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* chat */
+#chat-log {
+  position: absolute;
+  left: 8px;
+  top: 40px;
+  width: 380px;
+  pointer-events: none;
+  font-size: 12px;
+  color: #fff;
+  text-shadow: 1px 1px 0 #000;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+#chat-input-row {
+  position: absolute;
+  left: 8px;
+  top: 40px;
+  width: 380px;
+  display: none;
+}
+
+/* marquee selection rectangle */
+#marquee {
+  position: absolute;
+  border: 1px dotted #fff;
+  background: rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+  display: none;
+  z-index: 30;
+}
+
+/* modal dialogs */
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  pointer-events: auto;
+}
+
+.dialog-buttons {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+.dialog-buttons button {
+  min-width: 80px;
+}
+
+/* lobby */
+.lobby-window {
+  width: 560px;
+}
+
+.slot-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+}
+
+.slot-row .color-chip {
+  width: 16px;
+  height: 16px;
+  border: 1px solid #000;
+  cursor: pointer;
+}
+
+.slot-row .slot-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lobby-chat {
+  height: 120px;
+  overflow-y: auto;
+  background: #fff;
+  box-shadow: inset 1px 1px 0 #808080, inset -1px -1px 0 #fff;
+  padding: 3px;
+  font-size: 11px;
+}
+
+/* stats table on game over */
+.stats-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 11px;
+}
+
+.stats-table th,
+.stats-table td {
+  border: 1px solid #808080;
+  padding: 2px 8px;
+  text-align: right;
+}
+
+.stats-table th:first-child,
+.stats-table td:first-child {
+  text-align: left;
+}
+
+.loading-bar {
+  width: 280px;
+  height: 18px;
+  box-shadow: inset 1px 1px 0 #808080, inset -1px -1px 0 #fff;
+  padding: 2px;
+}
+
+.loading-bar > div {
+  height: 100%;
+  background: repeating-linear-gradient(to right, #000080 0 10px, #1084d0 10px 20px);
+  width: 0%;
+}
+
+kbd {
+  background: #d4d0c8;
+  border: 1px solid #808080;
+  box-shadow: 1px 1px 0 #fff inset;
+  padding: 0 3px;
+  font-size: 10px;
+}

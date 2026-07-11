@@ -228,6 +228,10 @@ export class InputController {
 
   /** Per-frame: aggregate pan input from keys + screen edges. */
   update() {
+    // cursor reflects the pending click mode
+    const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
+    canvas.style.cursor = this.game.attackMoveMode ? 'crosshair' : this.game.placing ? 'copy' : 'default';
+
     let px = 0, py = 0;
     if (this.keys.has('arrowleft')) px -= 1;
     if (this.keys.has('arrowright')) px += 1;

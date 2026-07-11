@@ -549,6 +549,19 @@ export class Hud {
       vol.addEventListener('input', () => audio.setVolume(Number((vol as HTMLInputElement).value) / 100));
       volRow.appendChild(vol);
 
+      // game speed — single-player only (the server owns multiplayer pacing)
+      const transport = this.game.transport as { speed?: number };
+      let speedRow: HTMLElement | null = null;
+      if (typeof transport.speed === 'number') {
+        speedRow = el('div', { class: 'field-row' });
+        speedRow.appendChild(el('label', { text: 'Game speed' }));
+        const sel = el('select') as HTMLSelectElement;
+        for (const s of [1, 1.5, 2, 4]) sel.appendChild(el('option', { value: String(s), text: `${s}×` }));
+        sel.value = String(transport.speed);
+        sel.addEventListener('change', () => { transport.speed = Number(sel.value); });
+        speedRow.appendChild(sel);
+      }
+
       const resign = el('button', { text: 'Resign' });
       resign.addEventListener('click', () => {
         done();
@@ -562,7 +575,9 @@ export class Hud {
       body.style.display = 'flex';
       (body.style as CSSStyleDeclaration).flexDirection = 'column';
       body.style.gap = '8px';
-      body.append(resume, volRow, resign, quit);
+      body.append(resume, volRow);
+      if (speedRow) body.append(speedRow);
+      body.append(resign, quit);
     });
     // re-arm flag when modal is removed
     const orig = close;

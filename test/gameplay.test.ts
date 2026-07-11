@@ -134,6 +134,46 @@ describe('gameplay flows', () => {
     expect(w.players[0].age).toBe(2);
   });
 
+  it('catapult boulders splash-damage clumped enemies (and can friendly-fire)', () => {
+    const w = makeWorld();
+    const tc0 = firstOwn(w, 0, (e) => e.type === 'towncenter');
+    // a knot of enemy militia standing east of the TC
+    const clump: Entity[] = [];
+    for (let i = 0; i < 4; i++) {
+      clump.push(w.createUnit(1, 'militia', tc0.x + fp(6), tc0.y + fp(i * 0.4 - 0.6)));
+    }
+    const cat = w.createUnit(0, 'catapult', tc0.x + fp(1), tc0.y);
+    w.applyCommand(0, { t: 'attack', units: [cat.id], target: clump[0].id });
+    let sawExplosion = false;
+    let boulderSeen = false;
+    for (let i = 0; i < 400; i++) {
+      w.step({ tick: w.tick, commands: [] });
+      for (const e of w.entities.values()) if (e.type === 'boulder') boulderSeen = true;
+      if (w.events.some((ev) => ev.type === 'explosion')) sawExplosion = true;
+    }
+    expect(boulderSeen).toBe(true);
+    expect(sawExplosion).toBe(true);
+    // splash hit more than one militia
+    const damaged = clump.filter((c) => !w.entities.has(c.id) || w.entities.get(c.id)!.hp < w.entities.get(c.id)!.maxHp);
+    expect(damaged.length).toBeGreaterThan(1);
+  });
+
+  it('watchtowers shoot arrows at enemies in range', () => {
+    const w = makeWorld();
+    const tc0 = firstOwn(w, 0, (e) => e.type === 'towncenter');
+    const tx = (tc0.x >> FP_BITS) + 5, ty = (tc0.y >> FP_BITS) + 5;
+    const tower = w.createBuilding(0, 'watchtower', tx, ty, true);
+    const target = w.createUnit(1, 'militia', (tx << FP_BITS) + fp(3), (ty << FP_BITS));
+    const hp0 = target.hp;
+    let arrowSeen = false;
+    for (let i = 0; i < 200; i++) {
+      w.step({ tick: w.tick, commands: [] });
+      for (const e of w.entities.values()) if (e.type === 'arrow' && e.fromId === tower.id) arrowSeen = true;
+    }
+    expect(arrowSeen).toBe(true);
+    expect(!w.entities.has(target.id) || w.entities.get(target.id)!.hp < hp0).toBe(true);
+  });
+
   it('rejects invalid commands: foreign units, bad placement, unaffordable', () => {
     const w = makeWorld();
     const enemyUnit = firstOwn(w, 1, (e) => e.kind === 'unit');

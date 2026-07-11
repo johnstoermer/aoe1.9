@@ -153,7 +153,7 @@ export type SimEventType =
   | 'died' | 'buildingRazed' | 'treeFall' | 'nodeDepleted'
   | 'gatherTick' | 'buildTick' | 'deposit'
   | 'buildingPlaced' | 'buildingDone' | 'unitTrained' | 'researchDone' | 'ageUp'
-  | 'underAttack' | 'playerDefeated' | 'gameOver';
+  | 'popBlocked' | 'underAttack' | 'playerDefeated' | 'gameOver';
 
 export interface SimEvent {
   type: SimEventType;

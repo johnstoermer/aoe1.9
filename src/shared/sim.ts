@@ -509,8 +509,10 @@ export class World {
             if (p.pop < p.popCap) {
               b.trainQueue.shift();
               this.spawnTrained(b, item.unit);
+            } else if (this.tick % (5 * TICK_RATE) === 0) {
+              // held until housing frees up; nag the owner occasionally
+              this.ev('popBlocked', b.x, b.y, { ent: b.id, player: b.owner });
             }
-            // else: hold until housing frees up
           } else {
             b.trainQueue.shift();
             this.completeTech(b.owner, item.tech!, b);

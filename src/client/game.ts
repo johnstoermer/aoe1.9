@@ -53,7 +53,6 @@ export class GameClient {
   private particles = new Particles();
   private rings = new SelectionRings();
   private ghost = new PlacementGhost();
-  private pickRoot = new THREE.Group();
   private raycaster = new THREE.Raycaster();
 
   private unitViews = new Map<number, UnitView>();
@@ -138,7 +137,6 @@ export class GameClient {
     scene.add(this.particles.group);
     scene.add(this.rings.mesh);
     scene.add(this.ghost.group);
-    scene.add(this.pickRoot);
 
     for (const e of this.world.entities.values()) {
       if (e.kind === 'resource') this.doodads.addNode(e);
@@ -318,6 +316,10 @@ export class GameClient {
         else if (!view.busy()) {
           view.setLoop(anims.idle, 0.3);
         }
+      }
+      // soft footsteps for units walking near the camera
+      if (view.moving && view.group.visible && Math.random() < dt * 1.6) {
+        audio.play('footstep', x, y);
       }
     }
 
@@ -536,6 +538,11 @@ export class GameClient {
           this.cb.onPlayerUpdate();
           break;
         }
+        case 'popBlocked':
+          if (ev.player === this.you) {
+            this.cb.onToast('Population limit reached — build more Houses!', true);
+          }
+          break;
         case 'underAttack':
           if (ev.player === this.you) {
             audio.play('alert');
@@ -887,6 +894,11 @@ export class GameClient {
       } else if (e.kind === 'building') {
         const f = this.world.footprint(e);
         this.rings.add(f.x + f.w / 2, f.y + f.h / 2, Math.max(f.w, f.h) * 0.62, color);
+        // rally marker while selected
+        if (e.owner === this.you && e.rallyX >= 0) {
+          const pulse = 0.3 + 0.1 * Math.sin(performance.now() / 240);
+          this.rings.add(toTiles(e.rallyX), toTiles(e.rallyY), pulse, color);
+        }
       } else if (e.kind === 'resource') {
         this.rings.add(e.tileX + 0.5, e.tileY + 0.5, 0.62, 0xf0f0f0);
       }

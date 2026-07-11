@@ -152,7 +152,6 @@ export class Doodads {
       if (!pool) return;
       const slot = pool.add(x + dx, y + dy, rot, jitter * size);
       if (slot >= 0) refs.push({ mesh: pool.mesh, slot });
-      (refs[refs.length - 1] as InstanceRef & { key?: string }).key = key;
     };
     switch (ent.type) {
       case 'tree':
@@ -178,10 +177,9 @@ export class Doodads {
     const refs = this.byEntity.get(entId);
     if (refs) {
       for (const r of refs) {
-        for (const [key, pool] of this.pools) {
+        for (const pool of this.pools.values()) {
           if (pool.mesh === r.mesh) {
             pool.remove(r.slot);
-            void key;
             break;
           }
         }

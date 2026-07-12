@@ -28,8 +28,14 @@ function own(world: World, predicate: (entity: Entity) => boolean): Entity[] {
 
 function roleCounts(world: World): Record<VillagerRole, number> {
   const counts = Object.fromEntries(VILLAGER_ROLES.map((role) => [role, 0])) as Record<VillagerRole, number>;
-  for (const villager of own(world, (entity) => entity.kind === 'unit' && entity.type === 'villager')) counts[villager.villagerRole]++;
+  for (const villager of own(world, (entity) => entity.kind === 'unit' && entity.type === 'villager')) {
+    if (!villager.inVillagerPool) counts[villager.villagerRole]++;
+  }
   return counts;
+}
+
+function idlePoolCount(world: World): number {
+  return own(world, (entity) => entity.kind === 'unit' && entity.type === 'villager' && entity.inVillagerPool).length;
 }
 
 function legalSpot(world: World, type: BuildingTypeId): { tx: number; ty: number } {
@@ -135,17 +141,23 @@ describe('modern mode economy', () => {
     expect(world.winner).toBe(1);
   });
 
-  it('reallocates roles without allowing any role below one', () => {
+  it('only assigns roles from the idle pool and never allows a role below one', () => {
     const world = makeModern();
     const townCenter = own(world, (entity) => entity.type === 'towncenter')[0];
     world.createUnit(0, 'villager', townCenter.x, townCenter.y);
     expect(roleCounts(world).food).toBe(2);
     world.applyCommand(0, { t: 'allocateVillager', role: 'wood', delta: 1 });
-    expect(roleCounts(world)).toEqual({ food: 1, wood: 2, gold: 1, stone: 1, builder: 1 });
-    world.applyCommand(0, { t: 'allocateVillager', role: 'wood', delta: -1 });
     expect(roleCounts(world)).toEqual({ food: 2, wood: 1, gold: 1, stone: 1, builder: 1 });
+    expect(idlePoolCount(world)).toBe(0);
     world.applyCommand(0, { t: 'allocateVillager', role: 'food', delta: -1 });
     expect(roleCounts(world).food).toBe(1);
+    expect(idlePoolCount(world)).toBe(1);
+    world.applyCommand(0, { t: 'allocateVillager', role: 'wood', delta: 1 });
+    expect(roleCounts(world)).toEqual({ food: 1, wood: 2, gold: 1, stone: 1, builder: 1 });
+    expect(idlePoolCount(world)).toBe(0);
+    world.applyCommand(0, { t: 'allocateVillager', role: 'food', delta: -1 });
+    expect(roleCounts(world).food).toBe(1);
+    expect(idlePoolCount(world)).toBe(0);
   });
 
   it('tracks independent 25-villager and 200-military caps', () => {

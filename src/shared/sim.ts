@@ -126,7 +126,7 @@ export class World {
       id: this.idSeq++, kind, type, owner, x, y, hp: 1, maxHp: 1,
       order: 'idle', orderX: 0, orderY: 0, targetId: 0, engagedId: 0,
       path: [], repath: 0, attackCd: 0, swingTick: 0,
-      carry: 0, carryKind: 'food', villagerRole: 'builder', gatherTimer: 0, queuedOrders: [],
+      carry: 0, carryKind: 'food', villagerRole: 'builder', inVillagerPool: false, gatherTimer: 0, queuedOrders: [],
       buildProgress: 0, trainQueue: [], rallyX: -1, rallyY: -1, rallyTargetId: 0, rallyResource: '',
       tileX: 0, tileY: 0, amount: 0,
       fromId: 0, projT: 0, projDur: 0, srcX: 0, srcY: 0, splash: 0, dmg: 0,
@@ -159,7 +159,8 @@ export class World {
   private nextModernVillagerRole(owner: number, excludeId = 0): VillagerRole {
     const counts = Object.fromEntries(VILLAGER_ROLES.map((role) => [role, 0])) as Record<VillagerRole, number>;
     for (const entity of this.entities.values()) {
-      if (entity.id !== excludeId && entity.kind === 'unit' && entity.type === 'villager' && entity.owner === owner) counts[entity.villagerRole]++;
+      if (entity.id !== excludeId && entity.kind === 'unit' && entity.type === 'villager'
+        && entity.owner === owner && !entity.inVillagerPool) counts[entity.villagerRole]++;
     }
     const missing = VILLAGER_ROLES.find((role) => counts[role] === 0);
     return missing ?? this.players[owner].villagerSpawnRole;
@@ -514,7 +515,7 @@ export class World {
       }
       case 'allocateVillager': {
         if (!this.isModern() || !VILLAGER_ROLES.includes(cmd.role) || (cmd.delta !== -1 && cmd.delta !== 1)) return;
-        this.adjustModernVillagerAllocation(player, cmd.role, cmd.delta, cmd.from);
+        this.adjustModernVillagerAllocation(player, cmd.role, cmd.delta);
         break;
       }
       case 'setVillagerSpawnRole': {
@@ -773,32 +774,29 @@ export class World {
   // Villagers: gather + build
   // -------------------------------------------------------------------------
 
-  private adjustModernVillagerAllocation(owner: number, role: VillagerRole, delta: -1 | 1, requestedDonor?: VillagerRole) {
+  private adjustModernVillagerAllocation(owner: number, role: VillagerRole, delta: -1 | 1) {
     const byRole = new Map<VillagerRole, Entity[]>(VILLAGER_ROLES.map((candidate) => [candidate, []]));
+    const idlePool: Entity[] = [];
     for (const entity of this.entities.values()) {
-      if (entity.kind === 'unit' && entity.type === 'villager' && entity.owner === owner) byRole.get(entity.villagerRole)!.push(entity);
+      if (entity.kind !== 'unit' || entity.type !== 'villager' || entity.owner !== owner) continue;
+      if (entity.inVillagerPool) idlePool.push(entity);
+      else byRole.get(entity.villagerRole)!.push(entity);
     }
     const current = byRole.get(role)!;
     let villager: Entity | undefined;
-    let destination: VillagerRole;
     if (delta > 0) {
-      const donor = requestedDonor && requestedDonor !== role && byRole.get(requestedDonor)!.length > 1
-        ? requestedDonor
-        : VILLAGER_ROLES.filter((candidate) => candidate !== role && byRole.get(candidate)!.length > 1)
-        .sort((a, b) => byRole.get(b)!.length - byRole.get(a)!.length || VILLAGER_ROLES.indexOf(a) - VILLAGER_ROLES.indexOf(b))[0];
-      if (!donor) return;
-      villager = byRole.get(donor)!.at(-1);
-      destination = role;
+      villager = idlePool.at(-1);
+      if (!villager) return;
+      villager.villagerRole = role;
+      villager.inVillagerPool = false;
     } else {
       if (current.length <= 1) return;
-      destination = VILLAGER_ROLES.filter((candidate) => candidate !== role)
-        .sort((a, b) => byRole.get(a)!.length - byRole.get(b)!.length || VILLAGER_ROLES.indexOf(a) - VILLAGER_ROLES.indexOf(b))[0];
       villager = current.at(-1);
+      if (!villager) return;
+      villager.inVillagerPool = true;
     }
-    if (!villager) return;
-    villager.villagerRole = destination;
     villager.carry = 0;
-    villager.carryKind = destination === 'builder' ? 'food' : destination;
+    villager.carryKind = role === 'builder' ? 'food' : role;
     villager.queuedOrders.length = 0;
     this.clearOrder(villager);
   }
@@ -807,6 +805,10 @@ export class World {
     this.normalizeModernVillagerRoles();
     for (const villager of this.entities.values()) {
       if (villager.kind !== 'unit' || villager.type !== 'villager' || villager.garrisonedIn) continue;
+      if (villager.inVillagerPool) {
+        if (villager.order !== 'idle') this.clearOrder(villager);
+        continue;
+      }
       if (villager.villagerRole === 'builder') {
         const target = this.entities.get(villager.targetId);
         if (villager.order === 'build' && target?.kind === 'building' && target.owner === villager.owner && !this.isBuildingComplete(target)) continue;
@@ -830,16 +832,23 @@ export class World {
   private normalizeModernVillagerRoles() {
     for (const player of this.players) {
       const byRole = new Map<VillagerRole, Entity[]>(VILLAGER_ROLES.map((role) => [role, []]));
+      const idlePool: Entity[] = [];
       for (const entity of this.entities.values()) {
-        if (entity.kind === 'unit' && entity.type === 'villager' && entity.owner === player.id) byRole.get(entity.villagerRole)!.push(entity);
+        if (entity.kind !== 'unit' || entity.type !== 'villager' || entity.owner !== player.id) continue;
+        if (entity.inVillagerPool) idlePool.push(entity);
+        else byRole.get(entity.villagerRole)!.push(entity);
       }
       for (const missing of VILLAGER_ROLES) {
         if (byRole.get(missing)!.length > 0) continue;
-        const donor = VILLAGER_ROLES.filter((role) => byRole.get(role)!.length > 1)
-          .sort((a, b) => byRole.get(b)!.length - byRole.get(a)!.length || VILLAGER_ROLES.indexOf(a) - VILLAGER_ROLES.indexOf(b))[0];
-        if (!donor) break;
-        const villager = byRole.get(donor)!.pop()!;
+        let villager = idlePool.pop();
+        if (!villager) {
+          const donor = VILLAGER_ROLES.filter((role) => byRole.get(role)!.length > 1)
+            .sort((a, b) => byRole.get(b)!.length - byRole.get(a)!.length || VILLAGER_ROLES.indexOf(a) - VILLAGER_ROLES.indexOf(b))[0];
+          if (!donor) break;
+          villager = byRole.get(donor)!.pop()!;
+        }
         villager.villagerRole = missing;
+        villager.inVillagerPool = false;
         villager.carry = 0;
         villager.queuedOrders.length = 0;
         this.clearOrder(villager);
@@ -1552,7 +1561,8 @@ export class World {
       mix(e.hp);
       mix(e.owner + 2);
       mix(ORDER_INDEX[e.order] + (e.targetId << 3));
-      mix(e.carry + e.amount * 64 + e.buildProgress + ROLE_INDEX[e.villagerRole] * 0x100000);
+      mix(e.carry + e.amount * 64 + e.buildProgress + ROLE_INDEX[e.villagerRole] * 0x100000
+        + (e.inVillagerPool ? 0x800000 : 0));
       mix(e.attackCd + e.swingTick * 512);
       mix(e.trainQueue.length + (e.trainQueue.length ? e.trainQueue[0].progress << 3 : 0));
       mix(e.rallyTargetId + (RESOURCE_INDEX[e.rallyResource] << 20));

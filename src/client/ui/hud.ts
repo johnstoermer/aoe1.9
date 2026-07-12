@@ -37,6 +37,7 @@ export class Hud {
   private modernVillagerProgress!: HTMLDivElement;
   private modernVillagerProgressFill!: HTMLDivElement;
   private modernVillagerProgressLabel!: HTMLSpanElement;
+  private modernVillagerPoolLabel!: HTMLSpanElement;
   private cmdGrid!: HTMLDivElement;
   private selInfo!: HTMLDivElement;
   private minimap!: HTMLCanvasElement;
@@ -277,8 +278,9 @@ export class Hud {
     this.cmdGrid = el('div', { class: 'cmd-grid' }) as HTMLDivElement;
     this.modernVillagerProgressFill = el('div', { class: 'modern-villager-progress-fill' }) as HTMLDivElement;
     this.modernVillagerProgressLabel = el('span', { text: 'New Villager' }) as HTMLSpanElement;
+    this.modernVillagerPoolLabel = el('span', { text: 'Idle pool: 0' }) as HTMLSpanElement;
     this.modernVillagerProgress = el('div', { class: 'modern-villager-progress' },
-      this.modernVillagerProgressLabel,
+      el('div', { class: 'modern-villager-progress-labels' }, this.modernVillagerProgressLabel, this.modernVillagerPoolLabel),
       el('div', { class: 'modern-villager-progress-track' }, this.modernVillagerProgressFill),
     ) as HTMLDivElement;
     const commandArea = el('div', { class: 'command-area' }, this.modernVillagerProgress, this.cmdGrid);
@@ -527,9 +529,13 @@ export class Hud {
   private buildModernRoleCommands() {
     const player = this.game.world.players[this.game.you];
     const counts = Object.fromEntries(VILLAGER_ROLES.map((role) => [role, 0])) as Record<VillagerRole, number>;
+    let idlePool = 0;
     for (const entity of this.game.world.entities.values()) {
-      if (entity.kind === 'unit' && entity.type === 'villager' && entity.owner === this.game.you) counts[entity.villagerRole]++;
+      if (entity.kind !== 'unit' || entity.type !== 'villager' || entity.owner !== this.game.you) continue;
+      if (entity.inVillagerPool) idlePool++;
+      else counts[entity.villagerRole]++;
     }
+    this.modernVillagerPoolLabel.textContent = `Idle pool: ${idlePool}`;
     const glyphs: Record<VillagerRole, string> = { food: 'F', wood: 'W', gold: 'G', stone: 'S', builder: 'B' };
     const colors: Record<VillagerRole, string> = {
       food: '#9b3030', wood: '#386b32', gold: '#b68b20', stone: '#758087', builder: '#875c32',
@@ -546,17 +552,17 @@ export class Hud {
       this.cmdGrid.insertBefore(cell, button);
       cell.appendChild(button);
       const canRemove = counts[role] > 1;
-      const canAdd = VILLAGER_ROLES.some((candidate) => candidate !== role && counts[candidate] > 1);
+      const canAdd = idlePool > 0;
       const remove = el('button', {
         class: 'role-adjust role-remove',
         text: '−',
-        title: canRemove ? `Move one ${modernRoleLabel(role)} to the least-filled role` : 'Every role must keep at least one villager',
+        title: canRemove ? `Move one ${modernRoleLabel(role)} to the idle villager pool` : 'Every role must keep at least one villager',
         'aria-label': `Remove one ${modernRoleLabel(role)}`,
       }) as HTMLButtonElement;
       const add = el('button', {
         class: 'role-adjust role-add',
         text: '+',
-        title: canAdd ? `Move one villager into ${modernRoleLabel(role)}` : 'No other role can spare a villager',
+        title: canAdd ? `Assign one idle villager as ${modernRoleLabel(role)}` : 'The idle villager pool is empty',
         'aria-label': `Add one ${modernRoleLabel(role)}`,
       }) as HTMLButtonElement;
       remove.disabled = !canRemove;

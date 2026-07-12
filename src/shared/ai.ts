@@ -139,10 +139,15 @@ function rebalanceModernVillagers(world: World, pid: number, villagers: Entity[]
     desired[role]++;
   }
   const current = Object.fromEntries(VILLAGER_ROLES.map((role) => [role, 0])) as Record<VillagerRole, number>;
-  for (const villager of villagers) current[villager.villagerRole]++;
+  for (const villager of villagers) if (!villager.inVillagerPool) current[villager.villagerRole]++;
   const destination = VILLAGER_ROLES.find((role) => current[role] < desired[role]);
   const donor = VILLAGER_ROLES.find((role) => current[role] > desired[role]);
-  if (destination && donor) world.applyCommand(pid, { t: 'allocateVillager', role: destination, delta: 1, from: donor });
+  if (!destination) return;
+  if (!villagers.some((villager) => villager.inVillagerPool)) {
+    if (!donor) return;
+    world.applyCommand(pid, { t: 'allocateVillager', role: donor, delta: -1 });
+  }
+  world.applyCommand(pid, { t: 'allocateVillager', role: destination, delta: 1 });
 }
 
 /** Count wild food (berries) within ~10 tiles of the TC. */

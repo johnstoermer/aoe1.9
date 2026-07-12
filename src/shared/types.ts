@@ -64,6 +64,7 @@ export interface Entity {
   carry: number;           // villager cargo amount
   carryKind: Resource;
   villagerRole: VillagerRole;
+  inVillagerPool: boolean;
   gatherTimer: number;
   queuedOrders: QueuedOrder[]; // shift-queued follow-up orders
 
@@ -152,7 +153,7 @@ export type Command =
   | { t: 'delete'; id: number }
   | { t: 'garrison'; units: number[]; building: number }
   | { t: 'ungarrison'; building: number }
-  | { t: 'allocateVillager'; role: VillagerRole; delta: -1 | 1; from?: VillagerRole }
+  | { t: 'allocateVillager'; role: VillagerRole; delta: -1 | 1 }
   | { t: 'setVillagerSpawnRole'; role: VillagerRole }
   | { t: 'resign' };
 

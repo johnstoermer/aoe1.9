@@ -225,8 +225,9 @@ body {
   font-size: 10px;
 }
 
-.modern-villager-progress > span {
-  display: block;
+.modern-villager-progress-labels {
+  display: flex;
+  justify-content: space-between;
   margin-bottom: 2px;
 }
 

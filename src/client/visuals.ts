@@ -123,8 +123,8 @@ export const UNIT_VISUALS: Record<string, UnitVisual> = {
   crossbowman: {
     model: `${A}/units/Rogue.glb`, height: 0.72, yaw: 0, rig: true, weapon: `${A}/weapons/crossbow_2handed.gltf`,
     anims: {
-      idle: 'Ranged_2H_Idle', move: 'Running_A',
-      attackSequence: ['Ranged_2H_Aiming', 'Ranged_2H_Shoot', 'Ranged_2H_Reload'],
+      idle: 'Crossbow_Idle', move: 'Running_A',
+      attackSequence: ['Ranged_2H_Shoot', 'Ranged_2H_Reload'],
       death: 'Death_B',
     },
   },

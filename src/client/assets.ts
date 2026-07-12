@@ -134,6 +134,35 @@ export const animLibraries = {
   large: new Map<string, THREE.AnimationClip>(),
 };
 
+export function sliceAnimationClip(
+  source: THREE.AnimationClip,
+  name: string,
+  startFrame: number,
+  endFrame: number,
+  fps = 30,
+): THREE.AnimationClip {
+  const firstFrame = Math.max(0, Math.round(startFrame));
+  const lastFrame = Math.max(firstFrame, Math.round(endFrame));
+  const frameCount = lastFrame - firstFrame + 1;
+  const tracks = source.tracks.map((sourceTrack) => {
+    const track = sourceTrack.clone();
+    const interpolant = sourceTrack.createInterpolant();
+    const valueSize = sourceTrack.getValueSize();
+    const times = new Float32Array(frameCount);
+    const values = new Float32Array(frameCount * valueSize);
+    for (let frame = 0; frame < frameCount; frame++) {
+      times[frame] = frame / fps;
+      const sample = interpolant.evaluate(Math.min(source.duration, (firstFrame + frame) / fps));
+      values.set(sample, frame * valueSize);
+    }
+    track.times = times;
+    track.values = values;
+    track.setInterpolation(THREE.InterpolateLinear);
+    return track;
+  });
+  return new THREE.AnimationClip(name, frameCount / fps, tracks);
+}
+
 export async function loadAnimationLibrary() {
   for (const [size, paths] of [['medium', ANIM_LIBRARY], ['large', LARGE_ANIM_LIBRARY]] as const) {
     const models = await Promise.all(paths.map((path) => loader.loadAsync(path)));
@@ -143,6 +172,16 @@ export async function loadAnimationLibrary() {
         if (!library.has(clip.name)) library.set(clip.name, clip);
       }
     }
+  }
+  const crossbowIdleSource = animLibraries.medium.get('Ranged_2H_Aiming');
+  if (crossbowIdleSource) {
+    const crossbowIdle = sliceAnimationClip(crossbowIdleSource, 'Crossbow_Idle', 9, 47, 30);
+    animLibraries.medium.set(crossbowIdle.name, crossbowIdle);
+  }
+  const rangedOneHandedIdleSource = animLibraries.medium.get('Ranged_1H_Aiming');
+  if (rangedOneHandedIdleSource) {
+    const rangedOneHandedIdle = sliceAnimationClip(rangedOneHandedIdleSource, 'Ranged_1H_Idle', 11, 31, 30);
+    animLibraries.medium.set(rangedOneHandedIdle.name, rangedOneHandedIdle);
   }
 }
 

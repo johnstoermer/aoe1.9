@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { UNITS } from '../../shared/data';
 import type { UnitTypeId } from '../../shared/types';
 import {
-  applyTeamColor, getAnimationClips, instantiate, loadAnimationLibrary, loadModel,
+  applyTeamColor, getAnimationClips, instantiate, loadAnimationLibrary, loadModel, sliceAnimationClip,
 } from '../assets';
 import { applyEquipmentPlacement, createEquipmentAdapter, findHandSlot, modelPathFor, fitTo } from '../render/units';
 import {
@@ -221,13 +221,7 @@ export function showAnimationTester(onBack: () => void): () => void {
 
   const playSelectedSlice = () => {
     if (!sourceClip || sliceEnd < sliceStart) return;
-    const clip = THREE.AnimationUtils.subclip(
-      sourceClip,
-      `${sourceClip.name}_${sliceStart}_${sliceEnd}`,
-      sliceStart,
-      sliceEnd + 1,
-      ANIMATION_FPS,
-    );
+    const clip = sliceAnimationClip(sourceClip, `${sourceClip.name}_${sliceStart}_${sliceEnd}`, sliceStart, sliceEnd, ANIMATION_FPS);
     playing = true;
     play.textContent = 'Pause';
     startClip(clip, true);

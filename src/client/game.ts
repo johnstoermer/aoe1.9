@@ -400,7 +400,7 @@ export class GameClient {
             const visual = viewAnims(e.type);
             const sequence = visual.attackSequence;
             if (sequence && sequence.length > 0) {
-              const durations = e.type === 'bowman' ? [0.5, 0.55] : [0.3, 0.3, 0.8];
+              const durations = e.type === 'bowman' ? [0.5, 0.55] : [0.3, 0.8];
               view.playSequence(sequence, durations);
             } else if (visual.attack && visual.attack.length > 0) {
               const anims = visual.attack;

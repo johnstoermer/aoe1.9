@@ -12,6 +12,17 @@ blending, hit sparks and boulder explosions, positional audio, fog of war,
 control groups, shift-queued orders, rally points, and a minimap in a sunken
 Win98 panel.
 
+Every single-player and multiplayer lobby offers two rulesets:
+
+- **Modern Mode** (default): villagers are autonomous workers managed through
+  Farmer, Woodcutter, Gold Miner, Stone Miner, and Builder allocations. They
+  train automatically up to a separate 25-villager cap, gather directly into
+  stockpiles, and builders claim globally placed foundations. Military has a
+  fixed, separate cap of 200; Houses and resource drop-off camps are disabled.
+- **Classic Mode**: the original direct-control economy remains intact with
+  manually trained villagers, resource drop-offs, Houses, and a shared
+  housing-based population cap.
+
 ## Quick start
 
 ```bash
@@ -48,9 +59,11 @@ npm test
 | **H** | town center · **.** next idle villager · **Esc** cancel |
 | **Arrows / screen edge / middle-drag** | pan · **Wheel** zoom |
 
-Villagers gather from berries, trees, gold and stone mines (drop-off at the
-Town Center, Lumber Camp or Mining Camp) and plant infinite farms. Houses
-raise the population cap (75 max). The Blacksmith sells attack/armor
+In Modern Mode, use the persistent **Modern Economy** panel to allocate
+villager roles and place buildings; villagers themselves cannot be selected.
+In Classic Mode, villagers gather from berries, trees, gold and stone mines
+(drop-off at the Town Center, Lumber Camp or Mining Camp), plant farms, and
+build Houses to raise the shared population cap (75 max). The Blacksmith sells attack/armor
 upgrades; the Town Center researches the **Feudal** and **Castle** ages,
 unlocking the Archery Range, Watchtower, Siege Workshop, Castle and better
 troops. Catapult boulders splash — including your own troops, as tradition

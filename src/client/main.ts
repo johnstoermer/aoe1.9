@@ -119,6 +119,7 @@ function startGodMode() {
     seed: 1919,
     mapSize: 64,
     mapType: 'arabia',
+    mode: 'modern',
     gameSpeed: 1,
     discovered: true,
     players: [
@@ -136,6 +137,7 @@ function startSkirmish(cfg: SkirmishConfig) {
     seed: seedNum || 1,
     mapSize: cfg.mapSize,
     mapType: cfg.mapType,
+    mode: cfg.mode,
     gameSpeed: cfg.gameSpeed,
     discovered: cfg.discovered,
     players: [
@@ -184,6 +186,7 @@ async function connectAnd(name: string, then: (net: NetClient) => void) {
         setColor: (c) => net.send({ t: 'setColor', color: c }),
         setMapSize: (m) => net.send({ t: 'setMapSize', mapSize: m }),
         setMapType: (mapType) => net.send({ t: 'setMapType', mapType }),
+        setMode: (mode) => net.send({ t: 'setMode', mode }),
         setGameSpeed: (gameSpeed) => net.send({ t: 'setGameSpeed', gameSpeed }),
         setDiscovered: (discovered) => net.send({ t: 'setDiscovered', discovered }),
         addAI: (level) => net.send({ t: 'addAI', level }),

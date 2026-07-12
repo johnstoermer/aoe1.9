@@ -17,9 +17,9 @@ import { Grid, findPath } from './path';
 import { Prng } from './prng';
 import type {
   BuildingTypeId, Command, Entity, Frame, GameSetup, PlayerState, QueuedOrder,
-  Resource, SimEvent, SimEventType, TechId, UnitTypeId,
+  Resource, SimEvent, SimEventType, TechId, UnitTypeId, VillagerRole,
 } from './types';
-import { POP_CAP, TICK_RATE } from './types';
+import { MODERN_MILITARY_CAP, MODERN_VILLAGER_CAP, POP_CAP, TICK_RATE, VILLAGER_ROLES } from './types';
 import { aiThink } from './ai';
 
 const ARROW_SPEED = Math.round(fp(6.5) / TICK_RATE);   // fp per tick
@@ -77,7 +77,7 @@ export class World {
       this.players.push({
         id: i, name: p.name, color: p.color, isAI: p.isAI, aiLevel: p.aiLevel,
         alive: true, resigned: false, age: 0,
-        stock: { ...START_STOCK }, pop: 0, popCap: 0, techs: {},
+        stock: { ...START_STOCK }, pop: 0, popCap: 0, villagerPop: 0, militaryPop: 0, techs: {},
         stats: {
           gathered: { food: 0, wood: 0, gold: 0, stone: 0 },
           unitsTrained: 0, unitsLost: 0, unitsKilled: 0, buildingsRazed: 0, buildingsLost: 0,
@@ -104,7 +104,8 @@ export class World {
     for (let i = 0; i < setup.players.length; i++) {
       const s = this.map.spawns[i];
       const tc = this.createBuilding(i, 'towncenter', s.tx, s.ty, true);
-      for (let v = 0; v < START_VILLAGERS; v++) {
+      const startingVillagers = this.isModern() ? VILLAGER_ROLES.length : START_VILLAGERS;
+      for (let v = 0; v < startingVillagers; v++) {
         const k = 8 + v * 3; // fan out south of the TC
         const x = tc.x + ((fp(2.2) * dirCos(k)) >> 12);
         const y = tc.y + ((fp(2.2) * dirSin(k)) >> 12);
@@ -124,7 +125,7 @@ export class World {
       id: this.idSeq++, kind, type, owner, x, y, hp: 1, maxHp: 1,
       order: 'idle', orderX: 0, orderY: 0, targetId: 0, engagedId: 0,
       path: [], repath: 0, attackCd: 0, swingTick: 0,
-      carry: 0, carryKind: 'food', gatherTimer: 0, queuedOrders: [],
+      carry: 0, carryKind: 'food', villagerRole: 'builder', gatherTimer: 0, queuedOrders: [],
       buildProgress: 0, trainQueue: [], rallyX: -1, rallyY: -1, rallyTargetId: 0, rallyResource: '',
       tileX: 0, tileY: 0, amount: 0,
       fromId: 0, projT: 0, projDur: 0, srcX: 0, srcY: 0, splash: 0, dmg: 0,
@@ -150,7 +151,16 @@ export class World {
     const d = UNITS[type];
     const e = this.newEntity('unit', type, owner, x, y);
     e.hp = e.maxHp = d.hp;
+    if (type === 'villager' && this.isModern()) e.villagerRole = this.nextModernVillagerRole(owner, e.id);
     return e;
+  }
+
+  private nextModernVillagerRole(owner: number, excludeId = 0): VillagerRole {
+    const counts = Object.fromEntries(VILLAGER_ROLES.map((role) => [role, 0])) as Record<VillagerRole, number>;
+    for (const entity of this.entities.values()) {
+      if (entity.id !== excludeId && entity.kind === 'unit' && entity.type === 'villager' && entity.owner === owner) counts[entity.villagerRole]++;
+    }
+    return VILLAGER_ROLES.reduce((best, role) => counts[role] < counts[best] ? role : best, VILLAGER_ROLES[0]);
   }
 
   createBuilding(owner: number, type: BuildingTypeId, tx: number, ty: number, completed = false): Entity {
@@ -173,6 +183,10 @@ export class World {
 
   isBuildingComplete(e: Entity): boolean {
     return e.kind === 'building' && e.buildProgress >= totalBuildTicks(e.type as BuildingTypeId);
+  }
+
+  isModern(): boolean {
+    return this.setup.mode === 'modern';
   }
 
   footprint(e: Entity): { x: number; y: number; w: number; h: number } {
@@ -231,6 +245,7 @@ export class World {
   }
 
   canPlaceBuilding(player: number, type: BuildingTypeId, tx: number, ty: number): boolean {
+    if (this.isModern() && (type === 'house' || type === 'lumbercamp' || type === 'minecamp')) return false;
     const d = BUILDINGS[type];
     if (this.players[player].age < d.age) return false;
     if (!this.grid.rectFree(tx, ty, d.w, d.h)) return false;
@@ -268,6 +283,7 @@ export class World {
         }
       }
     }
+    if (this.isModern()) this.updateModernVillagerProduction();
     for (const p of this.players) {
       if (p.isAI && p.alive && this.tick > TICK_RATE && (this.tick + p.id * 3) % (p.aiLevel >= 2 ? 10 : 15) === 0) {
         aiThink(this, p.id);
@@ -275,6 +291,7 @@ export class World {
     }
 
     this.updateBuildings();
+    if (this.isModern()) this.assignModernVillagerWork();
     this.updateVillagers();
     this.updateCombat();
     this.moveUnits();
@@ -294,19 +311,28 @@ export class World {
     this.buckets.clear();
     this.buildingIds.length = 0;
     this.buildersByTarget.clear();
-    for (const p of this.players) { p.pop = 0; p.popCap = 0; }
+    for (const p of this.players) {
+      p.pop = 0;
+      p.popCap = this.isModern() ? MODERN_MILITARY_CAP : 0;
+      p.villagerPop = 0;
+      p.militaryPop = 0;
+    }
 
     for (const e of this.entities.values()) {
       if (e.kind === 'unit') {
         if (e.garrisonedIn) {
-          this.players[e.owner].pop++;
+          if (!this.isModern() || e.type !== 'villager') this.players[e.owner].pop++;
+          if (e.type === 'villager') this.players[e.owner].villagerPop++;
+          else this.players[e.owner].militaryPop++;
           continue;
         }
         const ti = (e.y >> FP_BITS) * this.size + (e.x >> FP_BITS);
         let b = this.buckets.get(ti);
         if (!b) this.buckets.set(ti, (b = []));
         b.push(e.id);
-        this.players[e.owner].pop++;
+        if (!this.isModern() || e.type !== 'villager') this.players[e.owner].pop++;
+        if (e.type === 'villager') this.players[e.owner].villagerPop++;
+        else this.players[e.owner].militaryPop++;
         if (e.order === 'build') {
           const t = this.entities.get(e.targetId);
           if (t && t.kind === 'building' && this.edgeDist(e.x, e.y, t) <= REACH_BUILDING) {
@@ -315,7 +341,7 @@ export class World {
         }
       } else if (e.kind === 'building') {
         this.buildingIds.push(e.id);
-        if (this.isBuildingComplete(e)) {
+        if (!this.isModern() && this.isBuildingComplete(e)) {
           const cap = BUILDINGS[e.type as BuildingTypeId].popCap;
           if (cap) this.players[e.owner].popCap = Math.min(POP_CAP, this.players[e.owner].popCap + cap);
         }
@@ -333,7 +359,7 @@ export class World {
     switch (cmd.t) {
       case 'move':
       case 'attackmove': {
-        const units = this.ownedUnits(player, cmd.units);
+        const units = this.commandableUnits(player, cmd.units);
         units.forEach((u, i) => {
           const [ox, oy] = formationOffset(i, units.length);
           this.giveOrder(u, {
@@ -348,12 +374,13 @@ export class World {
       case 'attack': {
         const t = this.entities.get(cmd.target);
         if (!t || t.owner === player || (t.kind !== 'unit' && t.kind !== 'building')) return;
-        for (const u of this.ownedUnits(player, cmd.units)) {
+        for (const u of this.commandableUnits(player, cmd.units)) {
           this.giveOrder(u, { order: 'attack', x: t.x, y: t.y, targetId: t.id }, cmd.queue === true);
         }
         break;
       }
       case 'gather': {
+        if (this.isModern()) return;
         const t = this.entities.get(cmd.target);
         if (!t || !this.isGatherable(player, t)) return;
         for (const u of this.ownedUnits(player, cmd.units)) {
@@ -364,18 +391,22 @@ export class World {
       }
       case 'build': {
         if (!isBuildingType(cmd.building)) return;
+        if (this.isModern() && (cmd.building === 'house' || cmd.building === 'lumbercamp' || cmd.building === 'minecamp')) return;
         const d = BUILDINGS[cmd.building];
         const villagers = this.ownedUnits(player, cmd.units).filter((u) => u.type === 'villager');
-        if (villagers.length === 0) return;
+        if (!this.isModern() && villagers.length === 0) return;
         if (!this.canAfford(player, d.cost) || !this.canPlaceBuilding(player, cmd.building, cmd.tx, cmd.ty)) return;
         this.payCost(player, d.cost);
         const b = this.createBuilding(player, cmd.building, cmd.tx, cmd.ty);
         this.evictUnitsFrom(cmd.tx, cmd.ty, d.w, d.h);
         this.ev('buildingPlaced', b.x, b.y, { ent: b.id, entType: b.type, player });
-        for (const u of villagers) this.giveOrder(u, { order: 'build', x: b.x, y: b.y, targetId: b.id }, cmd.queue === true);
+        if (!this.isModern()) {
+          for (const u of villagers) this.giveOrder(u, { order: 'build', x: b.x, y: b.y, targetId: b.id }, cmd.queue === true);
+        }
         break;
       }
       case 'buildmore': {
+        if (this.isModern()) return;
         const t = this.entities.get(cmd.target);
         if (!t || t.kind !== 'building' || t.owner !== player || this.isBuildingComplete(t)) return;
         for (const u of this.ownedUnits(player, cmd.units)) {
@@ -387,8 +418,10 @@ export class World {
         const b = this.entities.get(cmd.building);
         if (!b || b.kind !== 'building' || b.owner !== player || !this.isBuildingComplete(b)) return;
         if (!isUnitType(cmd.unit)) return;
+        if (this.isModern() && cmd.unit === 'villager') return;
         const d = UNITS[cmd.unit];
         if (d.building !== b.type || p.age < d.age) return;
+        if (this.isModern() && p.militaryPop + this.queuedUnitCount(player, false) >= MODERN_MILITARY_CAP) return;
         if (b.trainQueue.length >= 5 || !this.canAfford(player, d.cost)) return;
         this.payCost(player, d.cost);
         b.trainQueue.push({ unit: cmd.unit, progress: 0 });
@@ -410,6 +443,7 @@ export class World {
         const b = this.entities.get(cmd.building);
         const index = cmd.index | 0;
         if (!b || b.owner !== player || index < 0 || index >= b.trainQueue.length) return;
+        if (this.isModern() && b.trainQueue[index].unit === 'villager') return;
         const item = b.trainQueue.splice(index, 1)[0];
         this.refund(player, item.unit ? UNITS[item.unit].cost : TECHS[item.tech!].cost);
         break;
@@ -430,7 +464,7 @@ export class World {
         break;
       }
       case 'stop': {
-        for (const u of this.ownedUnits(player, cmd.units)) {
+        for (const u of this.commandableUnits(player, cmd.units)) {
           this.clearOrder(u);
           u.queuedOrders.length = 0;
         }
@@ -438,12 +472,14 @@ export class World {
       }
       case 'delete': {
         const e = this.entities.get(cmd.id);
-        if (e && e.owner === player && (e.kind === 'unit' || e.kind === 'building')) {
+        if (e && e.owner === player && (e.kind === 'unit' || e.kind === 'building')
+          && !(this.isModern() && e.kind === 'unit' && e.type === 'villager')) {
           this.kill(e, -1);
         }
         break;
       }
       case 'garrison': {
+        if (this.isModern()) return;
         const building = this.entities.get(cmd.building);
         if (!building || building.kind !== 'building' || building.owner !== player
           || building.type !== 'towncenter' || !this.isBuildingComplete(building)) return;
@@ -470,6 +506,11 @@ export class World {
           unit.y = (spot.y << FP_BITS) + FP / 2;
         }
         building.garrisonedIds.length = 0;
+        break;
+      }
+      case 'allocateVillager': {
+        if (!this.isModern() || !VILLAGER_ROLES.includes(cmd.role) || (cmd.delta !== -1 && cmd.delta !== 1)) return;
+        this.adjustModernVillagerAllocation(player, cmd.role, cmd.delta, cmd.from);
         break;
       }
       case 'resign': {
@@ -541,6 +582,41 @@ export class World {
     for (const k in cost) s[k as Resource] += cost[k as Resource]!;
   }
 
+  private canSpawnUnit(player: number, type: UnitTypeId): boolean {
+    const state = this.players[player];
+    if (!this.isModern()) return state.pop < state.popCap;
+    return type === 'villager'
+      ? state.villagerPop < MODERN_VILLAGER_CAP
+      : state.militaryPop < MODERN_MILITARY_CAP;
+  }
+
+  private queuedUnitCount(owner: number, villagers: boolean): number {
+    let count = 0;
+    for (const id of this.buildingIds) {
+      const building = this.entities.get(id);
+      if (!building || building.owner !== owner) continue;
+      count += building.trainQueue.filter((item) => item.unit && (item.unit === 'villager') === villagers).length;
+    }
+    return count;
+  }
+
+  private updateModernVillagerProduction() {
+    for (const player of this.players) {
+      if (!player.alive || player.villagerPop >= MODERN_VILLAGER_CAP) continue;
+      let queued = false;
+      let townCenter: Entity | null = null;
+      for (const id of this.buildingIds) {
+        const building = this.entities.get(id);
+        if (!building || building.owner !== player.id || building.type !== 'towncenter' || !this.isBuildingComplete(building)) continue;
+        if (building.trainQueue.some((item) => item.unit === 'villager')) queued = true;
+        if (!townCenter && building.trainQueue.length < 5) townCenter = building;
+      }
+      if (queued || !townCenter || !this.canAfford(player.id, UNITS.villager.cost)) continue;
+      this.payCost(player.id, UNITS.villager.cost);
+      townCenter.trainQueue.push({ unit: 'villager', progress: 0 });
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Buildings: construction, training, tower fire
   // -------------------------------------------------------------------------
@@ -574,8 +650,7 @@ export class World {
         if (item.progress < time) item.progress++;
         if (item.progress >= time) {
           if (item.unit) {
-            const p = this.players[b.owner];
-            if (p.pop < p.popCap) {
+            if (this.canSpawnUnit(b.owner, item.unit)) {
               b.trainQueue.shift();
               this.spawnTrained(b, item.unit);
             } else if (this.tick % (5 * TICK_RATE) === 0) {
@@ -611,7 +686,9 @@ export class World {
     const spot = this.freeTileAround(b.tileX, b.tileY, d.w, d.h);
     if (!spot) return; // completely walled in: unit is lost (degenerate case)
     const u = this.createUnit(b.owner, type, (spot.x << FP_BITS) + FP / 2, (spot.y << FP_BITS) + FP / 2);
-    this.players[b.owner].pop++; // keep the cap honest for same-tick spawns
+    if (!this.isModern() || type !== 'villager') this.players[b.owner].pop++; // keep the cap honest for same-tick spawns
+    if (type === 'villager') this.players[b.owner].villagerPop++;
+    else this.players[b.owner].militaryPop++;
     this.players[b.owner].stats.unitsTrained++;
     this.ev('unitTrained', u.x, u.y, { ent: u.id, entType: type, player: b.owner });
 
@@ -687,6 +764,98 @@ export class World {
   // Villagers: gather + build
   // -------------------------------------------------------------------------
 
+  private adjustModernVillagerAllocation(owner: number, role: VillagerRole, delta: -1 | 1, requestedDonor?: VillagerRole) {
+    const byRole = new Map<VillagerRole, Entity[]>(VILLAGER_ROLES.map((candidate) => [candidate, []]));
+    for (const entity of this.entities.values()) {
+      if (entity.kind === 'unit' && entity.type === 'villager' && entity.owner === owner) byRole.get(entity.villagerRole)!.push(entity);
+    }
+    const current = byRole.get(role)!;
+    let villager: Entity | undefined;
+    let destination: VillagerRole;
+    if (delta > 0) {
+      const donor = requestedDonor && requestedDonor !== role && byRole.get(requestedDonor)!.length > 1
+        ? requestedDonor
+        : VILLAGER_ROLES.filter((candidate) => candidate !== role && byRole.get(candidate)!.length > 1)
+        .sort((a, b) => byRole.get(b)!.length - byRole.get(a)!.length || VILLAGER_ROLES.indexOf(a) - VILLAGER_ROLES.indexOf(b))[0];
+      if (!donor) return;
+      villager = byRole.get(donor)!.at(-1);
+      destination = role;
+    } else {
+      if (current.length <= 1) return;
+      destination = VILLAGER_ROLES.filter((candidate) => candidate !== role)
+        .sort((a, b) => byRole.get(a)!.length - byRole.get(b)!.length || VILLAGER_ROLES.indexOf(a) - VILLAGER_ROLES.indexOf(b))[0];
+      villager = current.at(-1);
+    }
+    if (!villager) return;
+    villager.villagerRole = destination;
+    villager.carry = 0;
+    villager.carryKind = destination === 'builder' ? 'food' : destination;
+    villager.queuedOrders.length = 0;
+    this.clearOrder(villager);
+  }
+
+  private assignModernVillagerWork() {
+    this.normalizeModernVillagerRoles();
+    for (const villager of this.entities.values()) {
+      if (villager.kind !== 'unit' || villager.type !== 'villager' || villager.garrisonedIn) continue;
+      if (villager.villagerRole === 'builder') {
+        const target = this.entities.get(villager.targetId);
+        if (villager.order === 'build' && target?.kind === 'building' && target.owner === villager.owner && !this.isBuildingComplete(target)) continue;
+        const foundation = this.nearestFoundation(villager.owner, villager.x, villager.y, 0);
+        if (foundation) this.startOrder(villager, { order: 'build', x: foundation.x, y: foundation.y, targetId: foundation.id });
+        else if (villager.order !== 'idle') this.clearOrder(villager);
+        continue;
+      }
+      const target = this.entities.get(villager.targetId);
+      if (villager.order === 'gather' && target && this.modernTargetProvides(villager.owner, target, villager.villagerRole)) continue;
+      const resource = this.nearestModernResource(villager.owner, villager.villagerRole, villager.x, villager.y);
+      if (resource) {
+        villager.carryKind = villager.villagerRole;
+        this.startOrder(villager, { order: 'gather', x: resource.x, y: resource.y, targetId: resource.id });
+      } else if (villager.order !== 'idle') {
+        this.clearOrder(villager);
+      }
+    }
+  }
+
+  private normalizeModernVillagerRoles() {
+    for (const player of this.players) {
+      const byRole = new Map<VillagerRole, Entity[]>(VILLAGER_ROLES.map((role) => [role, []]));
+      for (const entity of this.entities.values()) {
+        if (entity.kind === 'unit' && entity.type === 'villager' && entity.owner === player.id) byRole.get(entity.villagerRole)!.push(entity);
+      }
+      for (const missing of VILLAGER_ROLES) {
+        if (byRole.get(missing)!.length > 0) continue;
+        const donor = VILLAGER_ROLES.filter((role) => byRole.get(role)!.length > 1)
+          .sort((a, b) => byRole.get(b)!.length - byRole.get(a)!.length || VILLAGER_ROLES.indexOf(a) - VILLAGER_ROLES.indexOf(b))[0];
+        if (!donor) break;
+        const villager = byRole.get(donor)!.pop()!;
+        villager.villagerRole = missing;
+        villager.carry = 0;
+        villager.queuedOrders.length = 0;
+        this.clearOrder(villager);
+        byRole.get(missing)!.push(villager);
+      }
+    }
+  }
+
+  private modernTargetProvides(owner: number, target: Entity, role: Resource): boolean {
+    if (!this.isGatherable(owner, target)) return false;
+    if (target.kind === 'building') return role === 'food' && target.type === 'farm';
+    return RESOURCE_NODES[target.type as keyof typeof RESOURCE_NODES].gives === role;
+  }
+
+  private nearestModernResource(owner: number, role: Resource, x: number, y: number): Entity | null {
+    let best: Entity | null = null;
+    let bestDistance = Infinity;
+    for (const entity of this.entities.values()) {
+      if (!this.modernTargetProvides(owner, entity, role)) continue;
+      const distance = distSq(x, y, entity.x, entity.y);
+      if (distance < bestDistance) { bestDistance = distance; best = entity; }
+    }
+    return best;
+  }
+
   private updateVillagers() {
     for (const e of this.entities.values()) {
       if (e.kind !== 'unit' || e.type !== 'villager' || e.garrisonedIn) continue;
@@ -699,7 +868,7 @@ export class World {
     const node = this.entities.get(u.targetId);
     const nodeValid = node && this.isGatherable(u.owner, node);
 
-    if (u.carry >= CARRY_CAPACITY || (!nodeValid && u.carry > 0)) {
+    if (!this.isModern() && (u.carry >= CARRY_CAPACITY || (!nodeValid && u.carry > 0))) {
       // walk to the nearest drop-off
       const drop = this.nearestDropoff(u.owner, u.carryKind, u.x, u.y);
       if (!drop) { if (!nodeValid) this.finishOrder(u); return; }
@@ -718,7 +887,13 @@ export class World {
     }
 
     if (!nodeValid) {
-      this.retargetGather(u, node ?? null);
+      if (this.isModern() && u.villagerRole !== 'builder') {
+        const resource = this.nearestModernResource(u.owner, u.villagerRole, u.x, u.y);
+        if (resource) this.startOrder(u, { order: 'gather', x: resource.x, y: resource.y, targetId: resource.id });
+        else this.clearOrder(u);
+      } else {
+        this.retargetGather(u, node ?? null);
+      }
       return;
     }
 
@@ -735,7 +910,14 @@ export class World {
       }
       if (++u.gatherTimer >= ticksPer) {
         u.gatherTimer = 0;
-        u.carry++;
+        if (this.isModern()) {
+          const player = this.players[u.owner];
+          player.stock[gives]++;
+          player.stats.gathered[gives]++;
+          this.ev('deposit', u.x, u.y, { ent: u.id, player: u.owner, data: 1 });
+        } else {
+          u.carry++;
+        }
         if (!isFarm) {
           node!.amount--;
           this.ev('gatherTick', node!.x, node!.y, { ent: u.id, entType: node!.type, data: node!.amount });
@@ -800,6 +982,12 @@ export class World {
     const b = this.entities.get(u.targetId);
     if (!b || b.kind !== 'building' || b.owner !== u.owner) { this.finishOrder(u); return; }
     if (this.isBuildingComplete(b)) {
+      if (this.isModern()) {
+        const next = this.nearestFoundation(u.owner, u.x, u.y, b.id);
+        if (next) this.startOrder(u, { order: 'build', x: next.x, y: next.y, targetId: next.id });
+        else this.clearOrder(u);
+        return;
+      }
       // One builder occupies a completed farm; the rest continue their queue.
       if (b.type === 'farm' && this.isGatherable(u.owner, b)) {
         const farmer = [...this.entities.values()]
@@ -827,9 +1015,14 @@ export class World {
     }
   }
 
+  private commandableUnits(player: number, ids: number[]): Entity[] {
+    const units = this.ownedUnits(player, ids);
+    return this.isModern() ? units.filter((unit) => unit.type !== 'villager') : units;
+  }
+
   private nearestFoundation(owner: number, x: number, y: number, exclude: number): Entity | null {
     let best: Entity | null = null;
-    let bestDistance = fp(18) * fp(18);
+    let bestDistance = this.isModern() ? Infinity : fp(18) * fp(18);
     for (const entity of this.entities.values()) {
       if (entity.id === exclude || entity.kind !== 'building' || entity.owner !== owner || this.isBuildingComplete(entity)) continue;
       const distance = distSq(x, y, entity.x, entity.y);
@@ -1337,6 +1530,7 @@ export class World {
       mix(p.stock.food); mix(p.stock.wood); mix(p.stock.gold); mix(p.stock.stone);
       mix(p.age + (p.alive ? 16 : 0));
       mix(p.pop + p.popCap * 256);
+      mix(p.villagerPop + p.militaryPop * 256);
       mix(this.aiStates[p.id].lastWave);
     }
     for (const e of this.entities.values()) {
@@ -1345,7 +1539,7 @@ export class World {
       mix(e.hp);
       mix(e.owner + 2);
       mix(ORDER_INDEX[e.order] + (e.targetId << 3));
-      mix(e.carry + e.amount * 64 + e.buildProgress);
+      mix(e.carry + e.amount * 64 + e.buildProgress + ROLE_INDEX[e.villagerRole] * 0x100000);
       mix(e.attackCd + e.swingTick * 512);
       mix(e.trainQueue.length + (e.trainQueue.length ? e.trainQueue[0].progress << 3 : 0));
       mix(e.rallyTargetId + (RESOURCE_INDEX[e.rallyResource] << 20));
@@ -1359,6 +1553,7 @@ const ORDER_INDEX: Record<Entity['order'], number> = {
 };
 
 const RESOURCE_INDEX: Record<Resource | '', number> = { '': 0, food: 1, wood: 2, gold: 3, stone: 4 };
+const ROLE_INDEX: Record<VillagerRole, number> = { food: 0, wood: 1, gold: 2, stone: 3, builder: 4 };
 
 const NEIGHBOR_OFFSETS: readonly (readonly [number, number])[] = [
   [0, 0], [1, 0], [0, 1], [1, 1], [-1, 1],

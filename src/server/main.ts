@@ -13,7 +13,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { WebSocket, WebSocketServer } from 'ws';
 import { DEFAULT_PORT, PROTOCOL_VERSION, type C2S, type RoomInfo, type S2C } from '../shared/protocol';
-import type { Command, Frame, GameSetup, MapTypeId } from '../shared/types';
+import type { Command, Frame, GameMode, GameSetup, MapTypeId } from '../shared/types';
 import { MAX_PLAYERS, TICK_MS } from '../shared/types';
 import { hashString } from '../shared/prng';
 
@@ -42,6 +42,7 @@ class Room {
   slots: Slot[] = [];
   mapSize = 80;
   mapType: MapTypeId = 'arabia';
+  mode: GameMode = 'modern';
   gameSpeed = 3;
   discovered = true;
   started = false;
@@ -76,6 +77,7 @@ class Room {
       hostPeer: this.host.id,
       mapSize: this.mapSize,
       mapType: this.mapType,
+      mode: this.mode,
       gameSpeed: this.gameSpeed,
       discovered: this.discovered,
       started: this.started,
@@ -108,6 +110,7 @@ class Room {
       seed: (hashString(this.code) ^ (Date.now() & 0x7fffffff)) >>> 0,
       mapSize: this.mapSize,
       mapType: this.mapType,
+      mode: this.mode,
       gameSpeed: this.gameSpeed,
       discovered: this.discovered,
       players: this.slots.map((s) => ({
@@ -295,6 +298,13 @@ function handleMessage(peer: Peer, msg: C2S) {
       if (!room || room.started || peer !== room.host) return;
       if (!['arabia', 'arena', 'blackforest'].includes(msg.mapType)) return;
       room.mapType = msg.mapType;
+      room.syncLobby();
+      break;
+    }
+    case 'setMode': {
+      if (!room || room.started || peer !== room.host) return;
+      if (msg.mode !== 'classic' && msg.mode !== 'modern') return;
+      room.mode = msg.mode;
       room.syncLobby();
       break;
     }

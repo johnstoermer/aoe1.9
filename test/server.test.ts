@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import { startServer, type RunningServer } from '../src/server/main';
 import type { C2S, RoomInfo, S2C } from '../src/shared/protocol';
+import { PROTOCOL_VERSION } from '../src/shared/protocol';
 import { World } from '../src/shared/sim';
 import type { Frame, GameSetup } from '../src/shared/types';
 
@@ -67,16 +68,20 @@ describe('multiplayer server', () => {
     const b = new TestClient();
     await a.connect(server.port);
     await b.connect(server.port);
-    a.send({ t: 'hello', name: 'Alice', version: 1 });
-    b.send({ t: 'hello', name: 'Bob', version: 1 });
+    a.send({ t: 'hello', name: 'Alice', version: PROTOCOL_VERSION });
+    b.send({ t: 'hello', name: 'Bob', version: PROTOCOL_VERSION });
 
     a.send({ t: 'create' });
     await until(() => a.room !== null);
+    expect(a.room!.mode).toBe('modern');
     const code = a.room!.code;
 
     b.send({ t: 'join', code });
     await until(() => b.room !== null && b.room.slots.length === 2);
     expect(a.room!.slots.length).toBe(2);
+
+    a.send({ t: 'setMode', mode: 'classic' });
+    await until(() => a.room?.mode === 'classic' && b.room?.mode === 'classic');
 
     b.send({ t: 'ready', ready: true });
     await until(() => a.room!.slots[1]?.ready === true);
@@ -86,6 +91,7 @@ describe('multiplayer server', () => {
     expect(a.you).toBe(0);
     expect(b.you).toBe(1);
     expect(a.setup!.seed).toBe(b.setup!.seed);
+    expect(a.setup!.mode).toBe('classic');
 
     // run two real Worlds off the frame streams, issuing commands from both
     const wa = new World(a.setup!);
@@ -126,8 +132,8 @@ describe('multiplayer server', () => {
     const b = new TestClient();
     await a.connect(server.port);
     await b.connect(server.port);
-    a.send({ t: 'hello', name: 'A', version: 1 });
-    b.send({ t: 'hello', name: 'B', version: 1 });
+    a.send({ t: 'hello', name: 'A', version: PROTOCOL_VERSION });
+    b.send({ t: 'hello', name: 'B', version: PROTOCOL_VERSION });
     a.send({ t: 'create' });
     await until(() => a.room !== null);
     b.send({ t: 'join', code: a.room!.code });
@@ -148,7 +154,7 @@ describe('multiplayer server', () => {
   it('rejects joining nonexistent or full rooms', async () => {
     const a = new TestClient();
     await a.connect(server.port);
-    a.send({ t: 'hello', name: 'X', version: 1 });
+    a.send({ t: 'hello', name: 'X', version: PROTOCOL_VERSION });
     a.send({ t: 'join', code: 'ZZZZ' });
     await until(() => a.errors.length > 0);
     expect(a.errors[0]).toMatch(/No game found/);

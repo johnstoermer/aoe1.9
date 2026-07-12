@@ -5,9 +5,9 @@
 // tick rate, and every client (plus the in-sim AI) executes the identical
 // frame stream. Desyncs are detected by comparing periodic state hashes.
 
-import type { Command, Frame, GameSetup, MapTypeId } from './types';
+import type { Command, Frame, GameMode, GameSetup, MapTypeId } from './types';
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 export const DEFAULT_PORT = 8080;
 export const HASH_PERIOD = 60; // report a state hash every N ticks (4s)
 
@@ -26,6 +26,7 @@ export interface RoomInfo {
   hostPeer: number;
   mapSize: number;
   mapType: MapTypeId;
+  mode: GameMode;
   gameSpeed: number;
   discovered: boolean;
   slots: LobbySlot[];
@@ -42,6 +43,7 @@ export type C2S =
   | { t: 'setColor'; color: number }
   | { t: 'setMapSize'; mapSize: number }        // host only
   | { t: 'setMapType'; mapType: MapTypeId }     // host only
+  | { t: 'setMode'; mode: GameMode }             // host only
   | { t: 'setGameSpeed'; gameSpeed: number }    // host only
   | { t: 'setDiscovered'; discovered: boolean } // host only
   | { t: 'addAI'; level: number }               // host only

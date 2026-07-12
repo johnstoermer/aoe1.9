@@ -9,7 +9,7 @@ import { AGE_NAMES, BUILDINGS, PLAYER_COLORS, TECHS, UNITS, isBuildingType, tota
 import { FP, FP_BITS, fp, toTiles } from '../shared/fixed';
 import { HASH_PERIOD } from '../shared/protocol';
 import { World } from '../shared/sim';
-import type { BuildingTypeId, Command, Entity, GameSetup, SimEvent, TechId, UnitTypeId } from '../shared/types';
+import type { BuildingTypeId, Command, Entity, GameSetup, SimEvent, TechId, UnitTypeId, VillagerRole } from '../shared/types';
 import { TICK_MS, TICK_RATE } from '../shared/types';
 import { audio } from './audio';
 import { loadAnimationLibrary, loadModel } from './assets';
@@ -100,6 +100,10 @@ export class GameClient {
     this.renderer = new GameRenderer(canvas);
     this.overlay = overlay;
     this.overlayCtx = overlay.getContext('2d')!;
+  }
+
+  isModernMode(): boolean {
+    return this.world.isModern();
   }
 
   /** Load all assets referenced by the current world, then start the loop. */
@@ -549,7 +553,9 @@ export class GameClient {
         }
         case 'popBlocked':
           if (ev.player === this.you) {
-            this.cb.onToast('Population limit reached — build more Houses!', true);
+            this.cb.onToast(this.isModernMode()
+              ? 'Military limit reached — Modern Mode has a fixed 200-unit military cap.'
+              : 'Population limit reached — build more Houses!', true);
           }
           break;
         case 'underAttack':
@@ -616,6 +622,8 @@ export class GameClient {
   select(ids: number[], additive = false) {
     if (!additive) this.selection.clear();
     for (const id of ids) {
+      const entity = this.world.entities.get(id);
+      if (this.isModernMode() && entity?.kind === 'unit' && entity.type === 'villager' && entity.owner === this.you) continue;
       if (this.selection.has(id) && additive && ids.length === 1) this.selection.delete(id);
       else this.selection.add(id);
     }
@@ -663,6 +671,7 @@ export class GameClient {
     const picked: number[] = [];
     for (const e of this.world.entities.values()) {
       if (e.kind !== 'unit' || e.owner !== this.you) continue;
+      if (this.isModernMode() && e.type === 'villager') continue;
       const s = this.renderer.worldToScreen(toTiles(e.x), toTiles(e.y), 0.4);
       if (!s.behind && s.x >= minX && s.x <= maxX && s.y >= minY && s.y <= maxY) picked.push(e.id);
     }
@@ -671,6 +680,7 @@ export class GameClient {
   }
 
   selectSameTypeOnScreen(seed: Entity) {
+    if (this.isModernMode() && seed.kind === 'unit' && seed.type === 'villager' && seed.owner === this.you) return;
     const picked: number[] = [];
     for (const e of this.world.entities.values()) {
       if (e.kind !== seed.kind || e.type !== seed.type || e.owner !== seed.owner) continue;
@@ -752,6 +762,7 @@ export class GameClient {
   }
 
   issueTrain(buildingId: number, unit: UnitTypeId) {
+    if (this.isModernMode() && unit === 'villager') return;
     this.transport.sendCommands([{ t: 'train', building: buildingId, unit }]);
     audio.play('click');
   }
@@ -770,6 +781,12 @@ export class GameClient {
     this.transport.sendCommands([{ t: 'ungarrison', building: buildingId }]);
   }
 
+  adjustVillagerRole(role: VillagerRole, delta: -1 | 1) {
+    if (!this.isModernMode()) return;
+    this.transport.sendCommands([{ t: 'allocateVillager', role, delta }]);
+    audio.play('click');
+  }
+
   resign() {
     this.transport.sendCommands([{ t: 'resign' }]);
   }
@@ -778,6 +795,7 @@ export class GameClient {
 
   enterPlacement(type: BuildingTypeId) {
     if (!isBuildingType(type)) return;
+    if (this.isModernMode() && (type === 'house' || type === 'lumbercamp' || type === 'minecamp')) return;
     this.placing = type;
     this.wallStart = null;
     const color = this.world.players[this.you].color;
@@ -827,7 +845,7 @@ export class GameClient {
     if (!this.placing) return;
     const type = this.placing;
     const villagers = this.selectedOwnUnits().filter((u) => u.type === 'villager');
-    if (villagers.length === 0) { this.cancelPlacement(); return; }
+    if (!this.isModernMode() && villagers.length === 0) { this.cancelPlacement(); return; }
     const d = BUILDINGS[type];
     if (type === 'woodwall' || type === 'stonewall') {
       if (!this.wallStart) {
@@ -839,7 +857,7 @@ export class GameClient {
         .filter((tile) => this.world.canPlaceBuilding(this.you, type, tile.x, tile.y));
       const affordable = Math.min(tiles.length, Math.floor((this.world.players[this.you].stock[type === 'woodwall' ? 'wood' : 'stone']) / 8));
       this.transport.sendCommands(tiles.slice(0, affordable).map((tile, index) => ({
-        t: 'build', units: villagers.map((villager) => villager.id), building: type,
+        t: 'build', units: this.isModernMode() ? [] : villagers.map((villager) => villager.id), building: type,
         tx: tile.x, ty: tile.y, queue: index > 0,
       })));
       this.cancelPlacement();
@@ -851,7 +869,7 @@ export class GameClient {
       return;
     }
     this.transport.sendCommands([{
-      t: 'build', units: villagers.map((v) => v.id), building: type,
+      t: 'build', units: this.isModernMode() ? [] : villagers.map((v) => v.id), building: type,
       tx: this.ghostTile.x, ty: this.ghostTile.y, queue: keepPlacing,
     }]);
     audio.play('click');
@@ -955,6 +973,7 @@ export class GameClient {
   private idleCursor = 0;
 
   selectNextIdleVillager() {
+    if (this.isModernMode()) { this.cb.onToast('Villagers are managed through role allocation in Modern Mode.'); return; }
     const idle: Entity[] = [];
     for (const e of this.world.entities.values()) {
       if (e.kind === 'unit' && e.owner === this.you && e.type === 'villager' && e.order === 'idle') idle.push(e);
@@ -966,6 +985,7 @@ export class GameClient {
   }
 
   idleVillagerCount(): number {
+    if (this.isModernMode()) return 0;
     let n = 0;
     for (const e of this.world.entities.values()) {
       if (e.kind === 'unit' && e.owner === this.you && e.type === 'villager' && e.order === 'idle') n++;

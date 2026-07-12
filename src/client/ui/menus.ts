@@ -2,7 +2,7 @@
 // skirmish setup, and the multiplayer connect/lobby flow.
 
 import { GAME_SPEEDS, MAP_SIZES, MAP_TYPES, type RoomInfo } from '../../shared/protocol';
-import type { MapTypeId } from '../../shared/types';
+import type { GameMode, MapTypeId } from '../../shared/types';
 import { PLAYER_COLORS } from '../../shared/data';
 import { MAX_PLAYERS } from '../../shared/types';
 import { audio } from '../audio';
@@ -12,6 +12,7 @@ export interface SkirmishConfig {
   playerName: string;
   mapSize: number;
   mapType: MapTypeId;
+  mode: GameMode;
   gameSpeed: number;
   discovered: boolean;
   aiCount: number;
@@ -96,6 +97,9 @@ export function showAbout(onBack: () => void): () => void {
   win.body.innerHTML = `
     <p><b>AOE 1.9</b> is a streamlined, open-source RTS in the spirit of Age of Empires II:
     gather food, wood, gold and stone; advance through three ages; raise an army; raze your rivals.</p>
+    <p><b>Modern Mode</b> uses autonomous villager roles, automatic villager production, global building placement,
+    and separate 25-villager / 200-military caps. <b>Classic Mode</b> preserves direct villager control, drop-offs,
+    Houses, and the original shared population system.</p>
     <fieldset><legend>Controls</legend>
       <p>
       <b>Left click / drag</b> select &nbsp; <b>Right click</b> move / gather / attack / rally<br>
@@ -140,6 +144,15 @@ export function showSkirmishSetup(cb: {
   for (const map of MAP_TYPES) mapTypeSel.appendChild(el('option', { value: map.id, text: map.name, title: map.description }));
   mapTypeRow.appendChild(mapTypeSel);
 
+  const modeRow = el('div', { class: 'field-row' });
+  modeRow.appendChild(el('label', { text: 'Rules' }));
+  const modeSel = el('select') as HTMLSelectElement;
+  modeSel.append(
+    el('option', { value: 'modern', text: 'Modern Mode — autonomous economy' }),
+    el('option', { value: 'classic', text: 'Classic Mode — direct villagers' }),
+  );
+  modeRow.appendChild(modeSel);
+
   const speedRow = el('div', { class: 'field-row' });
   speedRow.appendChild(el('label', { text: 'Game speed' }));
   const speedSel = el('select') as HTMLSelectElement;
@@ -179,6 +192,7 @@ export function showSkirmishSetup(cb: {
       playerName: nameInput.value.trim() || 'Player',
       mapSize: Number(mapSel.value),
       mapType: mapTypeSel.value as MapTypeId,
+      mode: modeSel.value as GameMode,
       gameSpeed: Number(speedSel.value),
       discovered: discovered.checked,
       aiCount: Number(aiSel.value),
@@ -190,7 +204,7 @@ export function showSkirmishSetup(cb: {
   back.addEventListener('click', cb.onBack);
   buttons.append(start, back);
 
-  win.body.append(nameRow, mapTypeRow, mapRow, speedRow, discoveredRow, aiRow, lvlRow, seedRow, buttons);
+  win.body.append(nameRow, modeRow, mapTypeRow, mapRow, speedRow, discoveredRow, aiRow, lvlRow, seedRow, buttons);
   s.appendChild(win.root);
   return () => s.remove();
 }
@@ -247,6 +261,7 @@ export interface LobbyActions {
   setColor(color: number): void;
   setMapSize(size: number): void;
   setMapType(mapType: MapTypeId): void;
+  setMode(mode: GameMode): void;
   setGameSpeed(speed: number): void;
   setDiscovered(discovered: boolean): void;
   addAI(level: number): void;
@@ -265,6 +280,7 @@ export class LobbyScreen {
   private readyBtn: HTMLButtonElement;
   private mapSel: HTMLSelectElement;
   private mapTypeSel: HTMLSelectElement;
+  private modeSel: HTMLSelectElement;
   private speedSel: HTMLSelectElement;
   private discoveredCheck: HTMLInputElement;
   private codeSpan: HTMLElement;
@@ -284,6 +300,16 @@ export class LobbyScreen {
     codeRow.appendChild(el('span', { text: ' — share it with your friends' }));
 
     this.slotsBox = el('div', { class: 'sunken-panel', style: 'padding:2px; min-height:120px;' }) as HTMLDivElement;
+
+    const modeRow = el('div', { class: 'field-row' });
+    modeRow.appendChild(el('label', { text: 'Rules' }));
+    this.modeSel = el('select') as HTMLSelectElement;
+    this.modeSel.append(
+      el('option', { value: 'modern', text: 'Modern Mode' }),
+      el('option', { value: 'classic', text: 'Classic Mode' }),
+    );
+    this.modeSel.addEventListener('change', () => this.actions.setMode(this.modeSel.value as GameMode));
+    modeRow.appendChild(this.modeSel);
 
     const mapRow = el('div', { class: 'field-row' });
     mapRow.appendChild(el('label', { text: 'Map size' }));
@@ -338,7 +364,7 @@ export class LobbyScreen {
     leave.addEventListener('click', () => this.actions.leave());
     buttons.append(this.startBtn, this.readyBtn, leave);
 
-    win.body.append(codeRow, this.slotsBox, mapRow, this.chatBox, chatRow, buttons);
+    win.body.append(codeRow, this.slotsBox, modeRow, mapRow, this.chatBox, chatRow, buttons);
     this.s.appendChild(win.root);
   }
 
@@ -346,11 +372,13 @@ export class LobbyScreen {
     this.codeSpan.textContent = room.code;
     this.mapSel.value = String(room.mapSize);
     this.mapTypeSel.value = room.mapType;
+    this.modeSel.value = room.mode;
     this.speedSel.value = String(room.gameSpeed);
     this.discoveredCheck.checked = room.discovered;
     const isHost = room.hostPeer === this.myPeer;
     this.mapSel.disabled = !isHost;
     this.mapTypeSel.disabled = !isHost;
+    this.modeSel.disabled = !isHost;
     this.speedSel.disabled = !isHost;
     this.discoveredCheck.disabled = !isHost;
     this.startBtn.style.display = isHost ? '' : 'none';

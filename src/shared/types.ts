@@ -6,9 +6,14 @@ export const TICK_RATE = 15; // sim ticks per second
 export const TICK_MS = 1000 / TICK_RATE;
 export const MAX_PLAYERS = 4;
 export const POP_CAP = 75;
+export const MODERN_VILLAGER_CAP = 25;
+export const MODERN_MILITARY_CAP = 200;
 
 export type Resource = 'food' | 'wood' | 'gold' | 'stone';
 export const RESOURCES: Resource[] = ['food', 'wood', 'gold', 'stone'];
+export type GameMode = 'classic' | 'modern';
+export type VillagerRole = Resource | 'builder';
+export const VILLAGER_ROLES: VillagerRole[] = ['food', 'wood', 'gold', 'stone', 'builder'];
 
 export type UnitTypeId =
   | 'villager' | 'barbarian' | 'knight' | 'bowman' | 'crossbowman'
@@ -58,6 +63,7 @@ export interface Entity {
   swingTick: number;       // >0: ticks until current swing lands its damage
   carry: number;           // villager cargo amount
   carryKind: Resource;
+  villagerRole: VillagerRole;
   gatherTimer: number;
   queuedOrders: QueuedOrder[]; // shift-queued follow-up orders
 
@@ -112,6 +118,8 @@ export interface PlayerState {
   stock: Record<Resource, number>;
   pop: number;
   popCap: number;
+  villagerPop: number;
+  militaryPop: number;
   techs: Partial<Record<TechId, boolean>>;
   // running score/statistics, shown on the post-game screen
   stats: {
@@ -143,6 +151,7 @@ export type Command =
   | { t: 'delete'; id: number }
   | { t: 'garrison'; units: number[]; building: number }
   | { t: 'ungarrison'; building: number }
+  | { t: 'allocateVillager'; role: VillagerRole; delta: -1 | 1; from?: VillagerRole }
   | { t: 'resign' };
 
 /** One sim tick's worth of ordered player commands, as sequenced by the server. */
@@ -177,6 +186,7 @@ export interface SimEvent {
 export interface GameSetup {
   seed: number;
   mapSize: number; // tiles per side
+  mode?: GameMode;
   mapType?: MapTypeId;
   gameSpeed?: number;
   discovered?: boolean;

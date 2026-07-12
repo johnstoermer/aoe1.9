@@ -6,8 +6,8 @@ import * as THREE from 'three';
 
 import { AGE_NAMES, BUILDINGS, PLAYER_COLORS, TECHS, UNITS } from '../../shared/data';
 import { FP_BITS, toTiles } from '../../shared/fixed';
-import type { BuildingTypeId, Entity, TechId, UnitTypeId } from '../../shared/types';
-import { POP_CAP } from '../../shared/types';
+import type { BuildingTypeId, Entity, TechId, UnitTypeId, VillagerRole } from '../../shared/types';
+import { MODERN_MILITARY_CAP, MODERN_VILLAGER_CAP, POP_CAP, VILLAGER_ROLES } from '../../shared/types';
 import { audio } from '../audio';
 import { drawResourceIcon, getClip, glyphIcon, renderModelIcon } from '../assets';
 import type { GameClient } from '../game';
@@ -29,6 +29,8 @@ export class Hud {
   private ageSpan!: HTMLSpanElement;
   private idleBtn!: HTMLButtonElement;
   private allocationSpan!: HTMLSpanElement;
+  private modernRoleRows = new Map<VillagerRole, { count: HTMLSpanElement; minus: HTMLButtonElement; plus: HTMLButtonElement }>();
+  private modernBuildButtons = new Map<BuildingTypeId, HTMLButtonElement>();
   private cmdGrid!: HTMLDivElement;
   private selInfo!: HTMLDivElement;
   private minimap!: HTMLCanvasElement;
@@ -49,6 +51,7 @@ export class Hud {
     this.root = el('div', { id: 'hud' }) as HTMLDivElement;
     document.getElementById('ui-root')!.appendChild(this.root);
     this.buildResourceBar();
+    if (this.game.isModernMode()) this.buildModernEconomyPanel();
     this.buildMinimap();
     this.buildPanel();
     this.buildChat();
@@ -83,7 +86,9 @@ export class Hud {
       const icon = el('img', { src: drawResourceIcon(kind), alt: kind });
       const span = el('span', { text: '0' });
       const box = el('div', { class: 'res' }, icon, span);
-      bindTooltip(box, () => kind === 'pop' ? 'Population / cap (build Houses to raise it)' : `Stockpiled ${kind}`);
+      bindTooltip(box, () => kind === 'pop'
+        ? this.game.isModernMode() ? 'Military population / 200 military cap' : 'Population / cap (build Houses to raise it)'
+        : `Stockpiled ${kind}`);
       this.resSpans.set(kind, span);
       this.resBar.appendChild(box);
     }
@@ -97,6 +102,7 @@ export class Hud {
     this.idleBtn.addEventListener('click', () => this.game.selectNextIdleVillager());
     bindTooltip(this.idleBtn, () => 'Select next idle villager (.)');
     this.resBar.appendChild(this.idleBtn);
+    if (this.game.isModernMode()) this.idleBtn.style.display = 'none';
 
     const menuBtn = el('button', { text: 'Menu' });
     menuBtn.addEventListener('click', () => this.openMenu());
@@ -111,8 +117,10 @@ export class Hud {
       span.textContent = String(p.stock[kind]);
     }
     const pop = this.resSpans.get('pop')!;
-    pop.textContent = `${p.pop}/${p.popCap}`;
-    pop.className = p.pop >= p.popCap && p.popCap < POP_CAP ? 'low' : '';
+    pop.textContent = this.game.isModernMode() ? `${p.militaryPop}/${MODERN_MILITARY_CAP}` : `${p.pop}/${p.popCap}`;
+    pop.className = this.game.isModernMode()
+      ? p.militaryPop >= MODERN_MILITARY_CAP ? 'low' : ''
+      : p.pop >= p.popCap && p.popCap < POP_CAP ? 'low' : '';
     this.ageSpan.textContent = AGE_NAMES[p.age];
     const allocated = { food: 0, wood: 0, gold: 0, stone: 0, building: 0 };
     for (const entity of this.game.world.entities.values()) {
@@ -127,10 +135,66 @@ export class Hud {
         if (resource in allocated) allocated[resource as 'food' | 'wood' | 'gold' | 'stone']++;
       }
     }
-    this.allocationSpan.textContent = `Villagers: F ${allocated.food} · W ${allocated.wood} · G ${allocated.gold} · S ${allocated.stone} · Build ${allocated.building}`;
+    this.allocationSpan.textContent = this.game.isModernMode()
+      ? `Villagers ${p.villagerPop}/${MODERN_VILLAGER_CAP} · Military ${p.militaryPop}/${MODERN_MILITARY_CAP}`
+      : `Villagers: F ${allocated.food} · W ${allocated.wood} · G ${allocated.gold} · S ${allocated.stone} · Build ${allocated.building}`;
+    if (this.game.isModernMode()) this.refreshModernEconomyPanel();
     const idle = this.game.idleVillagerCount();
     this.idleBtn.textContent = `Idle: ${idle}`;
     (this.idleBtn.style as CSSStyleDeclaration).fontWeight = idle > 0 ? 'bold' : 'normal';
+  }
+
+  private buildModernEconomyPanel() {
+    const win = makeWindow('Modern Economy', { closable: false, draggable: false, className: 'hud-window' });
+    win.root.id = 'modern-economy-window';
+    const roleLabels: Record<VillagerRole, string> = {
+      food: 'Farmer', wood: 'Woodcutter', gold: 'Gold Miner', stone: 'Stone Miner', builder: 'Builder',
+    };
+    const roles = el('div', { class: 'modern-role-grid' });
+    for (const role of VILLAGER_ROLES) {
+      const minus = el('button', { text: '−', title: `Move one ${roleLabels[role]} to another role` }) as HTMLButtonElement;
+      const plus = el('button', { text: '+', title: `Allocate one more ${roleLabels[role]}` }) as HTMLButtonElement;
+      const count = el('span', { text: `${roleLabels[role]} 1` }) as HTMLSpanElement;
+      minus.addEventListener('click', () => this.game.adjustVillagerRole(role, -1));
+      plus.addEventListener('click', () => this.game.adjustVillagerRole(role, 1));
+      roles.appendChild(el('div', { class: 'modern-role' }, minus, count, plus));
+      this.modernRoleRows.set(role, { count, minus, plus });
+    }
+
+    const buildings = el('div', { class: 'modern-build-grid' });
+    const excluded = new Set<BuildingTypeId>(['house', 'lumbercamp', 'minecamp']);
+    for (const type of Object.keys(BUILDINGS) as BuildingTypeId[]) {
+      if (excluded.has(type)) continue;
+      const data = BUILDINGS[type];
+      const button = el('button', { text: data.name }) as HTMLButtonElement;
+      bindTooltip(button, () => `Place ${data.name} — ${costText(data.cost)}. Builder-role villagers construct it automatically.`);
+      button.addEventListener('click', () => this.game.enterPlacement(type));
+      buildings.appendChild(button);
+      this.modernBuildButtons.set(type, button);
+    }
+    win.body.append(roles, buildings);
+    this.root.appendChild(win.root);
+  }
+
+  private refreshModernEconomyPanel() {
+    const counts = Object.fromEntries(VILLAGER_ROLES.map((role) => [role, 0])) as Record<VillagerRole, number>;
+    for (const entity of this.game.world.entities.values()) {
+      if (entity.kind === 'unit' && entity.type === 'villager' && entity.owner === this.game.you) counts[entity.villagerRole]++;
+    }
+    for (const role of VILLAGER_ROLES) {
+      const row = this.modernRoleRows.get(role);
+      if (!row) continue;
+      const label = role === 'food' ? 'Farmer' : role === 'wood' ? 'Woodcutter'
+        : role === 'gold' ? 'Gold Miner' : role === 'stone' ? 'Stone Miner' : 'Builder';
+      row.count.textContent = `${label} ${counts[role]}`;
+      row.minus.disabled = counts[role] <= 1;
+      row.plus.disabled = !VILLAGER_ROLES.some((candidate) => candidate !== role && counts[candidate] > 1);
+    }
+    const player = this.game.world.players[this.game.you];
+    for (const [type, button] of this.modernBuildButtons) {
+      const data = BUILDINGS[type];
+      button.disabled = player.age < data.age || !this.game.world.canAfford(this.game.you, data.cost);
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -274,7 +338,9 @@ export class Hud {
 
     if (sel.length === 0) {
       this.selInfo.appendChild(el('p', { text: 'Nothing selected.' }));
-      this.selInfo.appendChild(el('p', { html: '<kbd>H</kbd> town center &nbsp; <kbd>.</kbd> idle villager' }));
+      this.selInfo.appendChild(el('p', { html: this.game.isModernMode()
+        ? 'Use <b>Modern Economy</b> to allocate villagers and place buildings.'
+        : '<kbd>H</kbd> town center &nbsp; <kbd>.</kbd> idle villager' }));
       return;
     }
 
@@ -368,12 +434,17 @@ export class Hud {
       e.trainQueue.forEach((item, i) => {
         const label = item.unit ? UNITS[item.unit].name : TECHS[item.tech!].name;
         const total = item.unit ? UNITS[item.unit].trainTime : TECHS[item.tech!].time;
+        const automatic = this.game.isModernMode() && item.unit === 'villager';
         const img = el('img', {
           src: item.unit ? glyphIcon(label[0]) : glyphIcon('★', '#c8b060'),
           title: `${label} — click to cancel`,
         });
-        bindTooltip(img, () => `${label} ${Math.round(item.progress / total * 100)}%\nClick to cancel (refund)`);
-        img.addEventListener('click', () => this.game.issueCancelQueue(e.id, i));
+        bindTooltip(img, () => automatic
+          ? `${label} ${Math.round(item.progress / total * 100)}% — automatic production up to 25 villagers`
+          : `${label} ${Math.round(item.progress / total * 100)}%\nClick to cancel (refund)`);
+        if (!automatic) {
+          img.addEventListener('click', () => this.game.issueCancelQueue(e.id, i));
+        }
         row.appendChild(img);
       });
       this.selInfo.appendChild(row);
@@ -473,7 +544,8 @@ export class Hud {
   private buildVillagerCommands() {
     const world = this.game.world;
     const p = world.players[this.game.you];
-    const buildables = (Object.keys(BUILDINGS) as BuildingTypeId[]).filter((b) => BUILDINGS[b].age <= p.age);
+    const buildables = (Object.keys(BUILDINGS) as BuildingTypeId[]).filter((b) => BUILDINGS[b].age <= p.age
+      && !(this.game.isModernMode() && (b === 'house' || b === 'lumbercamp' || b === 'minecamp')));
     for (const b of buildables) {
       const d = BUILDINGS[b];
       this.cmdButton({
@@ -577,12 +649,14 @@ export class Hud {
     // trainable units
     for (const [id, d] of Object.entries(UNITS) as [UnitTypeId, typeof UNITS[UnitTypeId]][]) {
       if (d.building !== b.type) continue;
+      if (this.game.isModernMode() && id === 'villager') continue;
       if (p.age >= 2 && (id === 'barbarian' || id === 'bowman' || id === 'bruiser')) continue;
       const locked = p.age < d.age;
       this.cmdButton({
         icon: this.unitIconFor(id),
         hotkey: d.hotkey,
-        disabled: locked || !world.canAfford(this.game.you, d.cost) || b.trainQueue.length >= 5,
+        disabled: locked || !world.canAfford(this.game.you, d.cost) || b.trainQueue.length >= 5
+          || (this.game.isModernMode() && p.militaryPop >= MODERN_MILITARY_CAP),
         count: b.trainQueue.filter((q) => q.unit === id).length,
         tooltip: () => locked
           ? `${d.name} — requires ${AGE_NAMES[d.age]}`

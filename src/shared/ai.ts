@@ -6,8 +6,8 @@
 import { BUILDINGS, RESOURCE_NODES, TECHS, UNITS, totalBuildTicks } from './data';
 import { FP_BITS, distSq, fp } from './fixed';
 import type { World } from './sim';
-import type { BuildingTypeId, Entity, Resource, TechId, UnitTypeId } from './types';
-import { TICK_RATE } from './types';
+import type { BuildingTypeId, Entity, Resource, TechId, UnitTypeId, VillagerRole } from './types';
+import { TICK_RATE, VILLAGER_ROLES } from './types';
 
 interface AiTuning {
   villagerTarget: [number, number, number]; // per age
@@ -71,15 +71,16 @@ export function aiThink(world: World, pid: number) {
   const completed = (t: BuildingTypeId) => (buildings.get(t) ?? []).filter((b) => world.isBuildingComplete(b));
 
   // ---- economy: keep villagers busy and balanced -------------------------
-  assignGatherers(world, pid, villagers, tc, tune);
+  if (world.isModern()) rebalanceModernVillagers(world, pid, villagers);
+  else assignGatherers(world, pid, villagers, tc, tune);
 
   // housing ahead of demand
-  if (p.popCap < 75 && p.popCap - p.pop < 4 && !hasFoundation(buildings, 'house')) {
+  if (!world.isModern() && p.popCap < 75 && p.popCap - p.pop < 4 && !hasFoundation(buildings, 'house')) {
     tryBuild(world, pid, villagers, 'house', tc, 9);
   }
 
   // drop-off camps near far woodlines/mines
-  buildCampsIfWorthIt(world, pid, villagers, buildings);
+  if (!world.isModern()) buildCampsIfWorthIt(world, pid, villagers, buildings);
 
   // farms once wild food thins out
   const farms = countAll('farm');
@@ -102,10 +103,12 @@ export function aiThink(world: World, pid: number) {
   researchWants(world, pid, tc, completed('blacksmith')[0], villagers.length, tune);
 
   // ---- training -----------------------------------------------------------
-  const villTarget = tune.villagerTarget[p.age];
-  for (const b of completed('towncenter')) {
-    if (villagers.length < villTarget && b.trainQueue.length < 2 && world.canAfford(pid, UNITS.villager.cost)) {
-      world.applyCommand(pid, { t: 'train', building: b.id, unit: 'villager' });
+  if (!world.isModern()) {
+    const villTarget = tune.villagerTarget[p.age];
+    for (const b of completed('towncenter')) {
+      if (villagers.length < villTarget && b.trainQueue.length < 2 && world.canAfford(pid, UNITS.villager.cost)) {
+        world.applyCommand(pid, { t: 'train', building: b.id, unit: 'villager' });
+      }
     }
   }
   // once the economy can support aging up, bank food instead of spending
@@ -123,6 +126,23 @@ export function aiThink(world: World, pid: number) {
 
 function hasFoundation(buildings: Map<BuildingTypeId, Entity[]>, t: BuildingTypeId): boolean {
   return (buildings.get(t) ?? []).some((b) => b.buildProgress < totalBuildTicks(t));
+}
+
+function rebalanceModernVillagers(world: World, pid: number, villagers: Entity[]) {
+  if (villagers.length <= VILLAGER_ROLES.length) return;
+  const weights: Record<VillagerRole, number> = { food: 45, wood: 30, gold: 15, stone: 3, builder: 7 };
+  const desired = Object.fromEntries(VILLAGER_ROLES.map((role) => [role, 1])) as Record<VillagerRole, number>;
+  for (let assigned = VILLAGER_ROLES.length; assigned < villagers.length; assigned++) {
+    const role = VILLAGER_ROLES.reduce((best, candidate) =>
+      weights[candidate] * villagers.length - desired[candidate] * 100
+        > weights[best] * villagers.length - desired[best] * 100 ? candidate : best, VILLAGER_ROLES[0]);
+    desired[role]++;
+  }
+  const current = Object.fromEntries(VILLAGER_ROLES.map((role) => [role, 0])) as Record<VillagerRole, number>;
+  for (const villager of villagers) current[villager.villagerRole]++;
+  const destination = VILLAGER_ROLES.find((role) => current[role] < desired[role]);
+  const donor = VILLAGER_ROLES.find((role) => current[role] > desired[role]);
+  if (destination && donor) world.applyCommand(pid, { t: 'allocateVillager', role: destination, delta: 1, from: donor });
 }
 
 /** Count wild food (berries) within ~10 tiles of the TC. */

@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { PLAYER_COLORS } from '../shared/data';
-import { ANIM_LIBRARY, TEAM_REMAP } from './visuals';
+import { ANIM_LIBRARY, LARGE_ANIM_LIBRARY, TEAM_REMAP } from './visuals';
 
 // Shared uniform: all PS1-patched materials snap vertices to this virtual
 // resolution (half the render-target size gives the classic wobble).
@@ -129,23 +129,29 @@ export function instantiate(model: LoadedModel, skinned: boolean): THREE.Group {
 // Animation library
 // ---------------------------------------------------------------------------
 
-export const animLibrary = new Map<string, THREE.AnimationClip>();
+export const animLibraries = {
+  medium: new Map<string, THREE.AnimationClip>(),
+  large: new Map<string, THREE.AnimationClip>(),
+};
 
 export async function loadAnimationLibrary() {
-  const models = await Promise.all(ANIM_LIBRARY.map((p) => loader.loadAsync(p)));
-  for (const m of models) {
-    for (const clip of m.animations) {
-      if (!animLibrary.has(clip.name)) animLibrary.set(clip.name, clip);
+  for (const [size, paths] of [['medium', ANIM_LIBRARY], ['large', LARGE_ANIM_LIBRARY]] as const) {
+    const models = await Promise.all(paths.map((path) => loader.loadAsync(path)));
+    const library = animLibraries[size];
+    for (const model of models) {
+      for (const clip of model.animations) {
+        if (!library.has(clip.name)) library.set(clip.name, clip);
+      }
     }
   }
 }
 
-export function getClip(name: string): THREE.AnimationClip | undefined {
-  return animLibrary.get(name);
+export function getClip(name: string, size: 'medium' | 'large' = 'medium'): THREE.AnimationClip | undefined {
+  return animLibraries[size].get(name);
 }
 
-export function getAnimationClips(): THREE.AnimationClip[] {
-  return [...animLibrary.values()].sort((a, b) => a.name.localeCompare(b.name));
+export function getAnimationClips(size: 'medium' | 'large' = 'medium'): THREE.AnimationClip[] {
+  return [...animLibraries[size].values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 // ---------------------------------------------------------------------------

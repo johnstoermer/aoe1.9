@@ -4,15 +4,18 @@ import type { UnitTypeId } from '../../shared/types';
 import {
   applyTeamColor, getAnimationClips, instantiate, loadAnimationLibrary, loadModel,
 } from '../assets';
-import { findHandSlot, modelPathFor, fitTo } from '../render/units';
-import { UNIT_VISUALS } from '../visuals';
+import { applyEquipmentPlacement, findHandSlot, modelPathFor, fitTo } from '../render/units';
+import {
+  UNIT_VISUALS, getEquipmentPlacement, resetEquipmentPlacement, saveEquipmentPlacement,
+  type EquipmentPlacement,
+} from '../visuals';
 import { el, makeWindow } from '../ui/widgets';
 
 const CHARACTERS = (Object.keys(UNITS) as UnitTypeId[]).filter((type) => type !== 'catapult');
 const WEAPONS = [
   ['None', ''],
   ['Sword (1H)', '/assets/models/weapons/sword_1handed.gltf'],
-  ['Bow', '/assets/models/weapons/bow_withString.gltf'],
+  ['Bow (no string)', '/assets/models/weapons/bow.gltf'],
   ['Crossbow (2H)', '/assets/models/weapons/crossbow_2handed.gltf'],
   ['Large Axe (2H)', '/assets/models/weapons/axe_2handed_Large.gltf'],
   ['Hammer', '/assets/models/weapons/hammer_A.gltf'],
@@ -22,7 +25,7 @@ export function showAnimationTester(onBack: () => void): () => void {
   const screen = el('div', { class: 'screen desktop animation-tester-screen' }) as HTMLDivElement;
   document.getElementById('ui-root')!.appendChild(screen);
   const win = makeWindow('Character Animation & Equipment Tester', {
-    width: 900, onClose: onBack, draggable: false, className: 'animation-tester-window',
+    width: 1040, onClose: onBack, draggable: false, className: 'animation-tester-window',
   });
 
   const canvas = el('canvas', { class: 'animation-tester-canvas' }) as HTMLCanvasElement;
@@ -35,14 +38,26 @@ export function showAnimationTester(onBack: () => void): () => void {
   for (const [name, path] of WEAPONS) weaponOptions.push([path, name]);
   const weapon = labeledSelect('Weapon', weaponOptions);
   const hand = labeledSelect('Attach to', [['right', 'Right hand'], ['left', 'Left hand']]);
+  const position = tripleInputs('Position', 0.01);
+  const rotation = tripleInputs('Rotation (degrees)', 1);
+  const equipmentScale = tripleInputs('Scale', 0.01);
   const speed = el('input', { type: 'range', min: '0', max: '200', value: '100' }) as HTMLInputElement;
   const speedValue = el('span', { text: '1.00×' });
   const speedRow = el('div', { class: 'tester-field' }, el('label', { text: 'Playback speed' }), speed, speedValue);
   const status = el('div', { class: 'sunken-panel tester-status', text: 'Loading production animation library…' });
   const play = el('button', { text: 'Pause' });
   const reset = el('button', { text: 'Reset Pose' });
+  const savePlacement = el('button', { text: 'Save Placement' });
+  const resetPlacement = el('button', { text: 'Reset Placement' });
+  const copyPlacement = el('button', { text: 'Copy Current JSON' });
+  const copyAllPlacements = el('button', { text: 'Copy All JSON' });
   const back = el('button', { text: 'Back' });
-  controls.append(character.row, animation.row, weapon.row, hand.row, speedRow, play, reset, status, back);
+  controls.append(
+    character.row, animation.row, weapon.row, hand.row,
+    position.row, rotation.row, equipmentScale.row,
+    el('div', { class: 'tester-button-grid' }, savePlacement, resetPlacement, copyPlacement, copyAllPlacements),
+    speedRow, play, reset, status, back,
+  );
   win.body.append(canvas, controls);
   screen.appendChild(win.root);
 
@@ -65,6 +80,7 @@ export function showAnimationTester(onBack: () => void): () => void {
   const pivot = new THREE.Group();
   scene.add(pivot);
   let characterObject: THREE.Group | null = null;
+  let equipmentObject: THREE.Group | null = null;
   let mixer: THREE.AnimationMixer | null = null;
   let action: THREE.AnimationAction | null = null;
   let playing = true;
@@ -76,6 +92,8 @@ export function showAnimationTester(onBack: () => void): () => void {
   const loadCharacter = async () => {
     const currentRequest = ++requestId;
     const type = character.select.value as UnitTypeId;
+    const placement = getEquipmentPlacement(type);
+    writePlacement(placement);
     status.textContent = `Loading ${UNITS[type].name}…`;
     const model = await loadModel(modelPathFor(type, 0, 0));
     if (disposed || currentRequest !== requestId) return;
@@ -85,18 +103,21 @@ export function showAnimationTester(onBack: () => void): () => void {
     fitTo(characterObject, UNIT_VISUALS[type].height * 2.35, true);
     pivot.add(characterObject);
     mixer = new THREE.AnimationMixer(characterObject);
-    await attachWeapon(type, characterObject, weapon.select.value, hand.select.value);
+    refreshAnimations(type);
+    await attachWeapon(type, characterObject, weapon.select.value);
     playAnimation();
   };
 
-  const attachWeapon = async (type: UnitTypeId, object: THREE.Object3D, selected: string, side: string) => {
+  const attachWeapon = async (type: UnitTypeId, object: THREE.Object3D, selected: string) => {
     object.traverse((child) => {
       if (child.userData.debugWeapon) child.parent?.remove(child);
     });
+    equipmentObject = null;
+    const placement = readPlacement();
     const path = selected === 'auto' ? UNIT_VISUALS[type].weapon ?? '' : selected;
-    const slotName = side === 'left' ? 'handslot.l' : 'handslot.r';
-    const fallbackName = side === 'left' ? 'hand.l' : 'hand.r';
-    const slot = findHandSlot(object, side === 'left' ? 'left' : 'right');
+    const slotName = placement.hand === 'left' ? 'handslot.l' : 'handslot.r';
+    const fallbackName = placement.hand === 'left' ? 'hand.l' : 'hand.r';
+    const slot = findHandSlot(object, placement.hand);
     if (!path) {
       status.textContent = `${UNITS[type].name}: no weapon selected. ${slot ? `Found ${slot.name}.` : 'Hand slot missing.'}`;
       return;
@@ -108,30 +129,72 @@ export function showAnimationTester(onBack: () => void): () => void {
     const weaponModel = await loadModel(path);
     const equipment = instantiate(weaponModel, false);
     equipment.userData.debugWeapon = true;
+    applyEquipmentPlacement(equipment, placement);
     slot.add(equipment);
-    status.textContent = `${UNITS[type].name}: ${path.split('/').pop()} attached to ${slot.name}.`;
+    equipmentObject = equipment;
+    status.textContent = `${UNITS[type].name} (${UNIT_VISUALS[type].rigSize ?? 'medium'} rig): ${path.split('/').pop()} attached to ${slot.name}.`;
   };
 
   const playAnimation = () => {
     if (!mixer) return;
     mixer.stopAllAction();
-    const clip = getAnimationClips().find((candidate) => candidate.name === animation.select.value);
+    const rigSize = UNIT_VISUALS[character.select.value]?.rigSize ?? 'medium';
+    const clip = getAnimationClips(rigSize).find((candidate) => candidate.name === animation.select.value);
     if (!clip) return;
     action = mixer.clipAction(clip);
     action.setLoop(THREE.LoopRepeat, Infinity).play();
     action.paused = !playing;
   };
 
-  void loadAnimationLibrary().then(() => {
-    for (const clip of getAnimationClips()) animation.select.appendChild(el('option', { value: clip.name, text: clip.name }));
-    animation.select.value = 'Idle_A';
-    void loadCharacter();
-  }).catch((error) => { status.textContent = `Load failed: ${String(error)}`; });
+  const refreshAnimations = (type: string) => {
+    const visual = UNIT_VISUALS[type];
+    const clips = getAnimationClips(visual.rigSize ?? 'medium');
+    animation.select.textContent = '';
+    for (const clip of clips) animation.select.appendChild(el('option', { value: clip.name, text: clip.name }));
+    animation.select.value = clips.some((clip) => clip.name === visual.anims.idle) ? visual.anims.idle : clips[0]?.name ?? '';
+  };
+
+  const readPlacement = (): EquipmentPlacement => ({
+    hand: hand.select.value as 'left' | 'right',
+    position: position.inputs.map((input) => Number(input.value)) as [number, number, number],
+    rotation: rotation.inputs.map((input) => Number(input.value)) as [number, number, number],
+    scale: equipmentScale.inputs.map((input) => Number(input.value)) as [number, number, number],
+  });
+
+  const writePlacement = (placement: EquipmentPlacement) => {
+    hand.select.value = placement.hand;
+    position.inputs.forEach((input, index) => { input.value = String(placement.position[index]); });
+    rotation.inputs.forEach((input, index) => { input.value = String(placement.rotation[index]); });
+    equipmentScale.inputs.forEach((input, index) => { input.value = String(placement.scale[index]); });
+  };
+
+  const previewPlacement = () => {
+    if (equipmentObject) applyEquipmentPlacement(equipmentObject, readPlacement());
+  };
+
+  void loadAnimationLibrary().then(() => void loadCharacter())
+    .catch((error) => { status.textContent = `Load failed: ${String(error)}`; });
 
   character.select.addEventListener('change', () => void loadCharacter());
   animation.select.addEventListener('change', playAnimation);
-  weapon.select.addEventListener('change', () => { if (characterObject) void attachWeapon(character.select.value as UnitTypeId, characterObject, weapon.select.value, hand.select.value); });
-  hand.select.addEventListener('change', () => { if (characterObject) void attachWeapon(character.select.value as UnitTypeId, characterObject, weapon.select.value, hand.select.value); });
+  weapon.select.addEventListener('change', () => { if (characterObject) void attachWeapon(character.select.value as UnitTypeId, characterObject, weapon.select.value); });
+  hand.select.addEventListener('change', () => { if (characterObject) void attachWeapon(character.select.value as UnitTypeId, characterObject, weapon.select.value); });
+  for (const input of [...position.inputs, ...rotation.inputs, ...equipmentScale.inputs]) input.addEventListener('input', previewPlacement);
+  savePlacement.addEventListener('click', () => {
+    saveEquipmentPlacement(character.select.value, readPlacement());
+    status.textContent = `${UNITS[character.select.value as UnitTypeId].name}: placement saved locally and used by new live units.`;
+  });
+  resetPlacement.addEventListener('click', () => {
+    const placement = resetEquipmentPlacement(character.select.value);
+    writePlacement(placement);
+    previewPlacement();
+    status.textContent = `${UNITS[character.select.value as UnitTypeId].name}: placement reset to repository defaults.`;
+  });
+  copyPlacement.addEventListener('click', () => void copyJson({ [character.select.value]: readPlacement() }, status));
+  copyAllPlacements.addEventListener('click', () => {
+    const placements = Object.fromEntries(CHARACTERS.map((type) => [type, type === character.select.value ? readPlacement() : getEquipmentPlacement(type)]));
+    void copyJson(placements, status);
+  });
   speed.addEventListener('input', () => { speedValue.textContent = `${(Number(speed.value) / 100).toFixed(2)}×`; });
   play.addEventListener('click', () => {
     playing = !playing;
@@ -178,4 +241,29 @@ function labeledSelect(label: string, options: (readonly [string, string])[]) {
   for (const [value, text] of options) select.appendChild(el('option', { value, text }));
   const row = el('div', { class: 'tester-field' }, el('label', { text: label }), select);
   return { row, select };
+}
+
+function tripleInputs(label: string, step: number) {
+  const inputs = ['X', 'Y', 'Z'].map((axis) => {
+    const input = el('input', { type: 'number', step: String(step), value: step === 1 ? '0' : step === 0.01 && label === 'Scale' ? '1' : '0' }) as HTMLInputElement;
+    return input;
+  });
+  const row = el('fieldset', { class: 'tester-transform' }, el('legend', { text: label }));
+  ['X', 'Y', 'Z'].forEach((axis, index) => row.appendChild(el('label', {}, axis, inputs[index])));
+  return { row, inputs };
+}
+
+async function copyJson(value: unknown, status: HTMLElement) {
+  const json = JSON.stringify(value, null, 2);
+  try {
+    await navigator.clipboard.writeText(json);
+  } catch {
+    const textarea = document.createElement('textarea');
+    textarea.value = json;
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    textarea.remove();
+  }
+  status.textContent = 'Placement JSON copied. Send it back to update repository defaults.';
 }

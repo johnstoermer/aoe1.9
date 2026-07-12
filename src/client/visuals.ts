@@ -22,7 +22,49 @@ export interface UnitVisual {
   /** Animation played per gather kind (villager only). */
   gather?: Record<string, string>;
   rig: boolean; // skinned character using the shared animation library
+  rigSize?: 'medium' | 'large';
   weapon?: string;
+}
+
+export interface EquipmentPlacement {
+  hand: 'left' | 'right';
+  position: [number, number, number];
+  rotation: [number, number, number];
+  scale: [number, number, number];
+}
+
+const IDENTITY_PLACEMENT: EquipmentPlacement = {
+  hand: 'right', position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+};
+
+export const DEFAULT_EQUIPMENT_PLACEMENTS: Record<string, EquipmentPlacement> = {
+  villager: structuredClone(IDENTITY_PLACEMENT),
+  barbarian: structuredClone(IDENTITY_PLACEMENT),
+  knight: structuredClone(IDENTITY_PLACEMENT),
+  bowman: structuredClone(IDENTITY_PLACEMENT),
+  crossbowman: structuredClone(IDENTITY_PLACEMENT),
+  bruiser: structuredClone(IDENTITY_PLACEMENT),
+  vanguard: structuredClone(IDENTITY_PLACEMENT),
+};
+
+const placementKey = (type: string) => `aoe19-equipment-${type}`;
+
+export function getEquipmentPlacement(type: string): EquipmentPlacement {
+  const fallback = DEFAULT_EQUIPMENT_PLACEMENTS[type] ?? IDENTITY_PLACEMENT;
+  try {
+    const saved = localStorage.getItem(placementKey(type));
+    if (saved) return { ...structuredClone(fallback), ...JSON.parse(saved) } as EquipmentPlacement;
+  } catch {}
+  return structuredClone(fallback);
+}
+
+export function saveEquipmentPlacement(type: string, placement: EquipmentPlacement) {
+  localStorage.setItem(placementKey(type), JSON.stringify(placement));
+}
+
+export function resetEquipmentPlacement(type: string): EquipmentPlacement {
+  localStorage.removeItem(placementKey(type));
+  return getEquipmentPlacement(type);
 }
 
 export const UNIT_VISUALS: Record<string, UnitVisual> = {
@@ -47,7 +89,7 @@ export const UNIT_VISUALS: Record<string, UnitVisual> = {
     anims: { idle: 'Melee_1H_Idle', move: 'Running_A', attack: ['Melee_1H_Attack_Slice_Horizontal'], death: 'Death_A' },
   },
   bowman: {
-    model: `${A}/units/Ranger.glb`, height: 0.72, yaw: 0, rig: true, weapon: `${A}/weapons/bow_withString.gltf`,
+    model: `${A}/units/Ranger.glb`, height: 0.72, yaw: 0, rig: true, weapon: `${A}/weapons/bow.gltf`,
     anims: { idle: 'Idle_A', move: 'Running_A', attack: ['Ranged_Bow_Release'], death: 'Death_B' },
   },
   crossbowman: {
@@ -55,14 +97,14 @@ export const UNIT_VISUALS: Record<string, UnitVisual> = {
     anims: { idle: 'Ranged_2H_Idle', move: 'Running_A', attack: ['Ranged_Crossbow_Shoot'], death: 'Death_B' },
   },
   bruiser: {
-    model: `${A}/units/Barbarian_Large.glb`, height: 0.9, yaw: 0, rig: true, weapon: `${A}/weapons/axe_2handed_Large.gltf`,
-    anims: { idle: 'Melee_2H_Idle', move: 'Running_A', attack: ['Melee_2H_Attack_Chop'], death: 'Death_A' },
+    model: `${A}/units/Barbarian_Large.glb`, height: 0.9, yaw: 0, rig: true, rigSize: 'large', weapon: `${A}/weapons/axe_2handed_Large.gltf`,
+    anims: { idle: 'Melee_2H_Idle', move: 'Running_A', attack: ['Melee_2H_Attack', 'Melee_2H_Slam'], death: 'Death_A' },
   },
   vanguard: {
-    model: `${A}/units/BlackKnight.glb`, height: 0.94, yaw: 0, rig: true, weapon: `${A}/weapons/axe_2handed_Large.gltf`,
+    model: `${A}/units/BlackKnight.glb`, height: 0.94, yaw: 0, rig: true, rigSize: 'large', weapon: `${A}/weapons/axe_2handed_Large.gltf`,
     anims: {
       idle: 'Melee_2H_Idle', move: 'Running_A',
-      attack: ['Melee_2H_Attack_Chop', 'Melee_2H_Attack_Slice', 'Melee_2H_Attack_Spin'],
+      attack: ['Melee_2H_Attack', 'Melee_2H_Slam'],
       death: 'Death_A',
     },
   },
@@ -123,6 +165,15 @@ export const ANIM_LIBRARY = [
   `${A}/anims/Rig_Medium_CombatMelee.glb`,
   `${A}/anims/Rig_Medium_CombatRanged.glb`,
   `${A}/anims/Rig_Medium_Tools.glb`,
+];
+
+export const LARGE_ANIM_LIBRARY = [
+  `${A}/anims/Rig_Large_General.glb`,
+  `${A}/anims/Rig_Large_MovementBasic.glb`,
+  `${A}/anims/Rig_Large_MovementAdvanced.glb`,
+  `${A}/anims/Rig_Large_CombatMelee.glb`,
+  `${A}/anims/Rig_Large_Simulation.glb`,
+  `${A}/anims/Rig_Large_Special.glb`,
 ];
 
 /** Per-character team-color remap: which texture hues become the player color. */

@@ -16,6 +16,7 @@ import { buildingModelPath, makeWallModel } from '../render/buildings';
 import { modelPathFor } from '../render/units';
 import { applyTeamColor } from '../assets';
 import { fitTo } from '../render/units';
+import { UNIT_VISUALS } from '../visuals';
 import { bindTooltip, confirmDialog, costText, el, hideTooltip, makeWindow, modal, toast } from './widgets';
 
 const MINIMAP_SIZE = 176;
@@ -314,7 +315,7 @@ export class Hud {
       const url = renderModelIcon(key, () => {
         const o = instantiate(m, e.kind === 'unit');
         if (e.kind === 'unit') applyTeamColor(o, e.type, color);
-        if (e.kind === 'unit') this.posePortrait(o);
+        if (e.kind === 'unit') this.posePortrait(o, e.type);
         fitTo(o, 1, e.kind === 'unit');
         return o;
       });
@@ -458,7 +459,7 @@ export class Hud {
       const url = renderModelIcon(key, () => {
         const o = instantiate(m, UNITS[type].building !== 'workshop');
         applyTeamColor(o, type, color);
-        if (UNITS[type].building !== 'workshop') this.posePortrait(o);
+        if (UNITS[type].building !== 'workshop') this.posePortrait(o, type);
         fitTo(o, 1, true);
         return o;
       });
@@ -532,8 +533,9 @@ export class Hud {
     this.root.appendChild(win.root);
   }
 
-  private posePortrait(object: THREE.Object3D) {
-    const clip = getClip('Idle_B') ?? getClip('Idle_A');
+  private posePortrait(object: THREE.Object3D, type: string) {
+    const rigSize = UNIT_VISUALS[type]?.rigSize ?? 'medium';
+    const clip = getClip('Idle_B', rigSize) ?? getClip('Idle_A', rigSize);
     if (!clip) return;
     const animationMixer = new THREE.AnimationMixer(object);
     animationMixer.clipAction(clip).play();

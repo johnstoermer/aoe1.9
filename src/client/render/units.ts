@@ -7,7 +7,7 @@ import { COLOR_KEYS, PLAYER_COLORS, UNITS } from '../../shared/data';
 import { toTiles } from '../../shared/fixed';
 import type { Entity } from '../../shared/types';
 import { applyTeamColor, getClip, instantiate, loadModel, ps1ify, type LoadedModel } from '../assets';
-import { ARROW_MODEL, BOULDER_MODEL, UNIT_VISUALS } from '../visuals';
+import { ARROW_MODEL, BOULDER_MODEL, UNIT_VISUALS, getEquipmentPlacement, type EquipmentPlacement } from '../visuals';
 
 // Geometries and helper materials are shared across all unit views (units
 // are created and destroyed constantly; per-view geometry would leak GPU
@@ -74,6 +74,16 @@ export function findHandSlot(object: THREE.Object3D, side: 'left' | 'right'): TH
   return hand;
 }
 
+export function applyEquipmentPlacement(object: THREE.Object3D, placement: EquipmentPlacement) {
+  object.position.fromArray(placement.position);
+  object.rotation.set(
+    THREE.MathUtils.degToRad(placement.rotation[0]),
+    THREE.MathUtils.degToRad(placement.rotation[1]),
+    THREE.MathUtils.degToRad(placement.rotation[2]),
+  );
+  object.scale.fromArray(placement.scale);
+}
+
 export function modelPathFor(type: string, owner: number, entId: number): string {
   const v = UNIT_VISUALS[type];
   return v.model
@@ -92,6 +102,7 @@ export class UnitView {
   private oneShot: THREE.AnimationAction | null = null;
   private yawCurrent = 0;
   private yawOffset: number;
+  private rigSize: 'medium' | 'large';
   private lastX = 0;
   private lastY = 0;
   /** wander phase for the catapult rock */
@@ -104,6 +115,7 @@ export class UnitView {
     this.type = ent.type;
     this.owner = ent.owner;
     this.yawOffset = v.yaw;
+    this.rigSize = v.rigSize ?? 'medium';
 
     const obj = instantiate(model, v.rig);
     fitTo(obj, v.height, true);
@@ -111,9 +123,11 @@ export class UnitView {
     if (v.rig) applyTeamColor(obj, ent.type, ent.owner);
     this.group.add(obj);
     if (v.weapon) void loadModel(v.weapon).then((weaponModel) => {
-      const hand = findHandSlot(obj, 'right');
+      const placement = getEquipmentPlacement(ent.type);
+      const hand = findHandSlot(obj, placement.hand);
       if (!hand) return;
       const weapon = instantiate(weaponModel, false);
+      applyEquipmentPlacement(weapon, placement);
       hand.add(weapon);
     });
 
@@ -140,7 +154,7 @@ export class UnitView {
     if (!this.mixer) return null;
     let a = this.actions.get(name);
     if (!a) {
-      const clip = getClip(name);
+      const clip = getClip(name, this.rigSize);
       if (!clip) return null;
       a = this.mixer.clipAction(clip);
       this.actions.set(name, a);

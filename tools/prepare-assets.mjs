@@ -104,7 +104,10 @@ copyGlb('KayKit Mystery Monthly Series 5/3 - September 2024 - Black Knight/chara
 for (const a of ['General', 'MovementBasic', 'CombatMelee', 'CombatRanged', 'Tools']) {
   copyGlb(`${ANIM}/Rig_Medium_${a}.glb`, 'models/anims');
 }
-for (const weapon of ['sword_1handed', 'bow_withString', 'crossbow_2handed', 'axe_2handed_Large', 'hammer_A']) {
+for (const a of ['General', 'MovementBasic', 'MovementAdvanced', 'CombatMelee', 'Simulation', 'Special']) {
+  copyGlb(`KayKit Character Animations 1.1/Animations/gltf/Rig_Large/Rig_Large_${a}.glb`, 'models/anims');
+}
+for (const weapon of ['sword_1handed', 'bow', 'bow_withString', 'crossbow_2handed', 'axe_2handed_Large', 'hammer_A']) {
   const root = weapon === 'hammer_A' ? 'KayKit Fantasy Weapons Bits 1.0/Assets/gltf' : `${ADV}/Assets/gltf`;
   copyGltf(`${root}/${weapon}.gltf`, 'models/weapons');
 }

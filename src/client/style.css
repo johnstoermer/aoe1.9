@@ -45,6 +45,8 @@ body {
   pointer-events: none;
   font-smooth: never;
   -webkit-font-smoothing: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 #ui-root > * {
@@ -569,10 +571,39 @@ kbd {
 }
 
 .animation-tester-controls {
-  width: 225px;
+  width: 360px;
   display: flex;
   flex-direction: column;
   gap: 7px;
+}
+
+.tester-transform {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  margin: 0;
+  padding: 4px;
+}
+
+.tester-transform legend {
+  grid-column: 1 / -1;
+}
+
+.tester-transform label {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.tester-transform input {
+  min-width: 0;
+  width: 100%;
+}
+
+.tester-button-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
 }
 
 .tester-field {

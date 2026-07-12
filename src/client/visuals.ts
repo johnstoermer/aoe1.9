@@ -37,10 +37,6 @@ const IDENTITY_PLACEMENT: EquipmentPlacement = {
   hand: 'right', position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
 };
 
-const X90_PLACEMENT: EquipmentPlacement = {
-  hand: 'right', position: [0, 0, 0], rotation: [90, 0, 0], scale: [1, 1, 1],
-};
-
 const SMALL_1H_PLACEMENT: EquipmentPlacement = {
   hand: 'right', position: [0, 0.08, 0], rotation: [0, 0, 90], scale: [1, 1, 1],
 };
@@ -49,17 +45,21 @@ const LARGE_2H_PLACEMENT: EquipmentPlacement = {
   hand: 'right', position: [0, 0.4, 0], rotation: [0, -25, 90], scale: [1, 1, 1],
 };
 
+const CROSSBOW_PLACEMENT: EquipmentPlacement = {
+  hand: 'right', position: [-0.01, -0.07, 0], rotation: [-110, 0, 90], scale: [1, 1, 1],
+};
+
 export const DEFAULT_EQUIPMENT_PLACEMENTS: Record<string, EquipmentPlacement> = {
   villager: structuredClone(SMALL_1H_PLACEMENT),
   barbarian: structuredClone(SMALL_1H_PLACEMENT),
   knight: structuredClone(SMALL_1H_PLACEMENT),
-  bowman: { ...structuredClone(X90_PLACEMENT), hand: 'left' },
-  crossbowman: structuredClone(IDENTITY_PLACEMENT),
+  bowman: { ...structuredClone(SMALL_1H_PLACEMENT), hand: 'left' },
+  crossbowman: structuredClone(CROSSBOW_PLACEMENT),
   bruiser: structuredClone(LARGE_2H_PLACEMENT),
   vanguard: structuredClone(LARGE_2H_PLACEMENT),
 };
 
-const placementKey = (type: string) => `aoe19-equipment-v4-${type}`;
+const placementKey = (type: string) => `aoe19-equipment-v5-${type}`;
 
 export function kayKitHandForEquipment(path: string): 'left' | 'right' {
   const name = path.split('/').pop()?.toLowerCase() ?? '';

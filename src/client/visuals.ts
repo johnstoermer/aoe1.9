@@ -122,6 +122,7 @@ export const UNIT_VISUALS: Record<string, UnitVisual> = {
   },
   crossbowman: {
     model: `${A}/units/Rogue.glb`, height: 0.72, yaw: 0, rig: true, weapon: `${A}/weapons/crossbow_2handed.gltf`,
+    layeredMove: true,
     anims: {
       idle: 'Crossbow_Idle', move: 'Running_A',
       attackSequence: ['Ranged_2H_Shoot', 'Ranged_2H_Reload'],

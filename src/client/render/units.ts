@@ -206,7 +206,7 @@ export class UnitView {
     return action;
   }
 
-  private setLoops(key: string, actions: { action: THREE.AnimationAction; timeScale: number }[], fade: number) {
+  private setLoops(key: string, actions: { action: THREE.AnimationAction; timeScale: number }[], fade: number, immediate = false) {
     if (this.currentLoop === key) {
       for (const next of actions) next.action.timeScale = next.timeScale;
       return;
@@ -219,17 +219,27 @@ export class UnitView {
       next.action.timeScale = next.timeScale;
       next.action.setLoop(THREE.LoopRepeat, Infinity);
       next.action.enabled = true;
+      next.action.stopFading();
       next.action.setEffectiveWeight(1);
-      next.action.fadeIn(fade).play();
+      if (!immediate) next.action.fadeIn(fade);
+      next.action.play();
     }
     for (const old of previous) {
-      if (!this.loopActions.includes(old)) old.fadeOut(fade);
+      if (this.loopActions.includes(old)) continue;
+      old.stopFading();
+      if (immediate) old.stop();
+      else old.fadeOut(fade);
     }
   }
 
   setLoop(name: string, fade = 0.16, timeScale = 1) {
     const action = this.action(name);
     if (action) this.setLoops(name, [{ action, timeScale }], fade);
+  }
+
+  setIdleLoop(name: string) {
+    const action = this.action(name);
+    if (action) this.setLoops(name, [{ action, timeScale: 1 }], 0, true);
   }
 
   setMovementLoop(move: string, idle: string, timeScale: number, fade = 0.14) {

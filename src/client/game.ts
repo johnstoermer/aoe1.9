@@ -296,7 +296,7 @@ export class GameClient {
       const cx = toTiles(e.x), cy = toTiles(e.y);
       const x = prev ? prev.x + (cx - prev.x) * alpha : cx;
       const y = prev ? prev.y + (cy - prev.y) * alpha : cy;
-      const simMoving = !!prev && Math.hypot(cx - prev.x, cy - prev.y) > 0.001;
+      const simMoving = e.path.length > 0 && !!prev && Math.hypot(cx - prev.x, cy - prev.y) > 0.001;
 
       // facing: toward engaged target or order point
       let fx = 0, fy = 0;
@@ -313,7 +313,7 @@ export class GameClient {
         if (vis) {
           view.setMovementLoop(anims.move, anims.idle, Math.max(0.7, toTiles(unitData.speed) * TICK_RATE / 1.1));
         } else if (e.order !== 'gather' && e.order !== 'build') {
-          view.setLoop(anims.idle);
+          view.setIdleLoop(anims.idle);
         }
         // gather/build one-shots arrive via events; when standing between
         // swings fall back to idle softly

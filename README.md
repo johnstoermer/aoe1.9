@@ -18,7 +18,8 @@ Every single-player and multiplayer lobby offers two rulesets:
   Farmer, Woodcutter, Gold Miner, Stone Miner, and Builder allocations. They
   train automatically up to a separate 25-villager cap, gather directly into
   stockpiles, and builders claim globally placed foundations. Military has a
-  fixed, separate cap of 200; Houses and resource drop-off camps are disabled.
+  fixed, separate cap of 200; Town Centers, Farms, Houses, and resource
+  drop-off camps cannot be built. Losing the starting Town Center is defeat.
 - **Classic Mode**: the original direct-control economy remains intact with
   manually trained villagers, resource drop-offs, Houses, and a shared
   housing-based population cap.

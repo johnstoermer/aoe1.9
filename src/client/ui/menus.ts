@@ -98,8 +98,9 @@ export function showAbout(onBack: () => void): () => void {
     <p><b>AOE 1.9</b> is a streamlined, open-source RTS in the spirit of Age of Empires II:
     gather food, wood, gold and stone; advance through three ages; raise an army; raze your rivals.</p>
     <p><b>Modern Mode</b> uses autonomous villager roles, automatic villager production, global building placement,
-    and separate 25-villager / 200-military caps. <b>Classic Mode</b> preserves direct villager control, drop-offs,
-    Houses, and the original shared population system.</p>
+    separate 25-villager / 200-military caps, and immediate defeat if the starting Town Center falls.
+    <b>Classic Mode</b> preserves direct villager control, drop-offs, Houses, Farms, extra Town Centers,
+    and the original shared population system.</p>
     <fieldset><legend>Controls</legend>
       <p>
       <b>Left click / drag</b> select &nbsp; <b>Right click</b> move / gather / attack / rally<br>

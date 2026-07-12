@@ -7,7 +7,7 @@
 
 import type { Command, Frame, GameMode, GameSetup, MapTypeId } from './types';
 
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 export const DEFAULT_PORT = 8080;
 export const HASH_PERIOD = 60; // report a state hash every N ticks (4s)
 

@@ -120,6 +120,7 @@ export interface PlayerState {
   popCap: number;
   villagerPop: number;
   militaryPop: number;
+  villagerSpawnRole: VillagerRole;
   techs: Partial<Record<TechId, boolean>>;
   // running score/statistics, shown on the post-game screen
   stats: {
@@ -152,6 +153,7 @@ export type Command =
   | { t: 'garrison'; units: number[]; building: number }
   | { t: 'ungarrison'; building: number }
   | { t: 'allocateVillager'; role: VillagerRole; delta: -1 | 1; from?: VillagerRole }
+  | { t: 'setVillagerSpawnRole'; role: VillagerRole }
   | { t: 'resign' };
 
 /** One sim tick's worth of ordered player commands, as sequenced by the server. */

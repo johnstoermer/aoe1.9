@@ -787,6 +787,12 @@ export class GameClient {
     audio.play('click');
   }
 
+  setVillagerSpawnRole(role: VillagerRole) {
+    if (!this.isModernMode()) return;
+    this.transport.sendCommands([{ t: 'setVillagerSpawnRole', role }]);
+    audio.play('click');
+  }
+
   resign() {
     this.transport.sendCommands([{ t: 'resign' }]);
   }
@@ -795,7 +801,8 @@ export class GameClient {
 
   enterPlacement(type: BuildingTypeId) {
     if (!isBuildingType(type)) return;
-    if (this.isModernMode() && (type === 'house' || type === 'lumbercamp' || type === 'minecamp')) return;
+    if (this.isModernMode() && (type === 'towncenter' || type === 'house' || type === 'farm'
+      || type === 'lumbercamp' || type === 'minecamp')) return;
     this.placing = type;
     this.wallStart = null;
     const color = this.world.players[this.you].color;

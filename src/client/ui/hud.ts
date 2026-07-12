@@ -21,6 +21,11 @@ import { bindTooltip, confirmDialog, costText, el, hideTooltip, makeWindow, moda
 
 const MINIMAP_SIZE = 176;
 
+function modernRoleLabel(role: VillagerRole): string {
+  return role === 'food' ? 'Farmer' : role === 'wood' ? 'Woodcutter'
+    : role === 'gold' ? 'Gold Miner' : role === 'stone' ? 'Stone Miner' : 'Builder';
+}
+
 export class Hud {
   private game: GameClient;
   private root: HTMLDivElement;
@@ -29,8 +34,6 @@ export class Hud {
   private ageSpan!: HTMLSpanElement;
   private idleBtn!: HTMLButtonElement;
   private allocationSpan!: HTMLSpanElement;
-  private modernRoleRows = new Map<VillagerRole, { count: HTMLSpanElement; minus: HTMLButtonElement; plus: HTMLButtonElement }>();
-  private modernBuildButtons = new Map<BuildingTypeId, HTMLButtonElement>();
   private cmdGrid!: HTMLDivElement;
   private selInfo!: HTMLDivElement;
   private minimap!: HTMLCanvasElement;
@@ -51,7 +54,6 @@ export class Hud {
     this.root = el('div', { id: 'hud' }) as HTMLDivElement;
     document.getElementById('ui-root')!.appendChild(this.root);
     this.buildResourceBar();
-    if (this.game.isModernMode()) this.buildModernEconomyPanel();
     this.buildMinimap();
     this.buildPanel();
     this.buildChat();
@@ -136,65 +138,11 @@ export class Hud {
       }
     }
     this.allocationSpan.textContent = this.game.isModernMode()
-      ? `Villagers ${p.villagerPop}/${MODERN_VILLAGER_CAP} · Military ${p.militaryPop}/${MODERN_MILITARY_CAP}`
+      ? `Villagers ${p.villagerPop}/${MODERN_VILLAGER_CAP} · Next: ${modernRoleLabel(p.villagerSpawnRole)}`
       : `Villagers: F ${allocated.food} · W ${allocated.wood} · G ${allocated.gold} · S ${allocated.stone} · Build ${allocated.building}`;
-    if (this.game.isModernMode()) this.refreshModernEconomyPanel();
     const idle = this.game.idleVillagerCount();
     this.idleBtn.textContent = `Idle: ${idle}`;
     (this.idleBtn.style as CSSStyleDeclaration).fontWeight = idle > 0 ? 'bold' : 'normal';
-  }
-
-  private buildModernEconomyPanel() {
-    const win = makeWindow('Modern Economy', { closable: false, draggable: false, className: 'hud-window' });
-    win.root.id = 'modern-economy-window';
-    const roleLabels: Record<VillagerRole, string> = {
-      food: 'Farmer', wood: 'Woodcutter', gold: 'Gold Miner', stone: 'Stone Miner', builder: 'Builder',
-    };
-    const roles = el('div', { class: 'modern-role-grid' });
-    for (const role of VILLAGER_ROLES) {
-      const minus = el('button', { text: '−', title: `Move one ${roleLabels[role]} to another role` }) as HTMLButtonElement;
-      const plus = el('button', { text: '+', title: `Allocate one more ${roleLabels[role]}` }) as HTMLButtonElement;
-      const count = el('span', { text: `${roleLabels[role]} 1` }) as HTMLSpanElement;
-      minus.addEventListener('click', () => this.game.adjustVillagerRole(role, -1));
-      plus.addEventListener('click', () => this.game.adjustVillagerRole(role, 1));
-      roles.appendChild(el('div', { class: 'modern-role' }, minus, count, plus));
-      this.modernRoleRows.set(role, { count, minus, plus });
-    }
-
-    const buildings = el('div', { class: 'modern-build-grid' });
-    const excluded = new Set<BuildingTypeId>(['house', 'lumbercamp', 'minecamp']);
-    for (const type of Object.keys(BUILDINGS) as BuildingTypeId[]) {
-      if (excluded.has(type)) continue;
-      const data = BUILDINGS[type];
-      const button = el('button', { text: data.name }) as HTMLButtonElement;
-      bindTooltip(button, () => `Place ${data.name} — ${costText(data.cost)}. Builder-role villagers construct it automatically.`);
-      button.addEventListener('click', () => this.game.enterPlacement(type));
-      buildings.appendChild(button);
-      this.modernBuildButtons.set(type, button);
-    }
-    win.body.append(roles, buildings);
-    this.root.appendChild(win.root);
-  }
-
-  private refreshModernEconomyPanel() {
-    const counts = Object.fromEntries(VILLAGER_ROLES.map((role) => [role, 0])) as Record<VillagerRole, number>;
-    for (const entity of this.game.world.entities.values()) {
-      if (entity.kind === 'unit' && entity.type === 'villager' && entity.owner === this.game.you) counts[entity.villagerRole]++;
-    }
-    for (const role of VILLAGER_ROLES) {
-      const row = this.modernRoleRows.get(role);
-      if (!row) continue;
-      const label = role === 'food' ? 'Farmer' : role === 'wood' ? 'Woodcutter'
-        : role === 'gold' ? 'Gold Miner' : role === 'stone' ? 'Stone Miner' : 'Builder';
-      row.count.textContent = `${label} ${counts[role]}`;
-      row.minus.disabled = counts[role] <= 1;
-      row.plus.disabled = !VILLAGER_ROLES.some((candidate) => candidate !== role && counts[candidate] > 1);
-    }
-    const player = this.game.world.players[this.game.you];
-    for (const [type, button] of this.modernBuildButtons) {
-      const data = BUILDINGS[type];
-      button.disabled = player.age < data.age || !this.game.world.canAfford(this.game.you, data.cost);
-    }
   }
 
   // -------------------------------------------------------------------------
@@ -335,12 +283,14 @@ export class Hud {
     this.selInfo.textContent = '';
     this.cmdGrid.textContent = '';
     const sel = this.game.selectedEntities();
+    if (this.game.isModernMode()) this.buildModernRoleCommands();
 
     if (sel.length === 0) {
       this.selInfo.appendChild(el('p', { text: 'Nothing selected.' }));
       this.selInfo.appendChild(el('p', { html: this.game.isModernMode()
-        ? 'Use <b>Modern Economy</b> to allocate villagers and place buildings.'
+        ? 'Choose the next villager role and place buildings from this panel.'
         : '<kbd>H</kbd> town center &nbsp; <kbd>.</kbd> idle villager' }));
+      if (this.game.isModernMode()) this.buildModernConstructionCommands();
       return;
     }
 
@@ -545,7 +495,8 @@ export class Hud {
     const world = this.game.world;
     const p = world.players[this.game.you];
     const buildables = (Object.keys(BUILDINGS) as BuildingTypeId[]).filter((b) => BUILDINGS[b].age <= p.age
-      && !(this.game.isModernMode() && (b === 'house' || b === 'lumbercamp' || b === 'minecamp')));
+      && !(this.game.isModernMode() && (b === 'towncenter' || b === 'house' || b === 'farm'
+        || b === 'lumbercamp' || b === 'minecamp')));
     for (const b of buildables) {
       const d = BUILDINGS[b];
       this.cmdButton({
@@ -554,6 +505,44 @@ export class Hud {
         disabled: !world.canAfford(this.game.you, d.cost),
         tooltip: () => `Build ${d.name} — ${costText(d.cost)}\n${d.popCap ? `+${d.popCap} population. ` : ''}${d.dropOff ? `Drop-off: ${d.dropOff.join(', ')}. ` : ''}${d.attack ? 'Shoots arrows at enemies. ' : ''}`,
         onClick: () => this.game.enterPlacement(b),
+      });
+    }
+  }
+
+  private buildModernRoleCommands() {
+    const player = this.game.world.players[this.game.you];
+    const counts = Object.fromEntries(VILLAGER_ROLES.map((role) => [role, 0])) as Record<VillagerRole, number>;
+    for (const entity of this.game.world.entities.values()) {
+      if (entity.kind === 'unit' && entity.type === 'villager' && entity.owner === this.game.you) counts[entity.villagerRole]++;
+    }
+    const glyphs: Record<VillagerRole, string> = { food: 'F', wood: 'W', gold: 'G', stone: 'S', builder: 'B' };
+    const colors: Record<VillagerRole, string> = {
+      food: '#9b3030', wood: '#386b32', gold: '#b68b20', stone: '#758087', builder: '#875c32',
+    };
+    for (const role of VILLAGER_ROLES) {
+      const button = this.cmdButton({
+        icon: glyphIcon(glyphs[role], colors[role], '#fff'),
+        count: counts[role],
+        tooltip: () => `${modernRoleLabel(role)}: ${counts[role]} assigned. Click to send newly created villagers to this role.`,
+        onClick: () => this.game.setVillagerSpawnRole(role),
+      });
+      if (player.villagerSpawnRole === role) button.classList.add('selected');
+    }
+  }
+
+  private buildModernConstructionCommands() {
+    const world = this.game.world;
+    const player = world.players[this.game.you];
+    const excluded = new Set<BuildingTypeId>(['towncenter', 'house', 'farm', 'lumbercamp', 'minecamp']);
+    for (const type of Object.keys(BUILDINGS) as BuildingTypeId[]) {
+      if (excluded.has(type)) continue;
+      const data = BUILDINGS[type];
+      this.cmdButton({
+        icon: this.buildingIconFor(type),
+        hotkey: data.hotkey,
+        disabled: player.age < data.age || !world.canAfford(this.game.you, data.cost),
+        tooltip: () => `Place ${data.name} — ${costText(data.cost)}. Builder-role villagers construct it automatically.`,
+        onClick: () => this.game.enterPlacement(type),
       });
     }
   }

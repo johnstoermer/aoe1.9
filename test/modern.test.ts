@@ -63,6 +63,17 @@ describe('modern mode economy', () => {
     expect(townCenter.trainQueue.filter((item) => item.unit === 'villager')).toHaveLength(1);
     tick(world, UNITS.villager.trainTime + 2);
     expect(world.players[0].villagerPop).toBe(6);
+    expect(roleCounts(world).food).toBe(2);
+  });
+
+  it('sends new villagers to the selected role and defaults that selection to Farmer', () => {
+    const world = makeModern();
+    expect(world.players[0].villagerSpawnRole).toBe('food');
+    world.applyCommand(0, { t: 'setVillagerSpawnRole', role: 'wood' });
+    expect(world.players[0].villagerSpawnRole).toBe('wood');
+    tick(world, UNITS.villager.trainTime + 3);
+    expect(roleCounts(world).wood).toBe(2);
+    expect(roleCounts(world).food).toBe(1);
   });
 
   it('gathers directly into stock without any drop-off building', () => {
@@ -104,13 +115,24 @@ describe('modern mode economy', () => {
     expect(world.isBuildingComplete(barracks)).toBe(true);
   });
 
-  it('forbids houses and resource drop-off camps', () => {
+  it('forbids extra town centers, farms, houses, and resource drop-off camps', () => {
     const world = makeModern();
-    for (const type of ['house', 'lumbercamp', 'minecamp'] as BuildingTypeId[]) {
+    for (const type of ['towncenter', 'farm', 'house', 'lumbercamp', 'minecamp'] as BuildingTypeId[]) {
+      const before = own(world, (entity) => entity.type === type).length;
       expect(world.canPlaceBuilding(0, type, 1, 1)).toBe(false);
       world.applyCommand(0, { t: 'build', units: [], building: type, tx: 1, ty: 1 });
-      expect(own(world, (entity) => entity.type === type)).toHaveLength(0);
+      expect(own(world, (entity) => entity.type === type)).toHaveLength(before);
     }
+  });
+
+  it('defeats a Modern player when their town center is destroyed', () => {
+    const world = makeModern();
+    const townCenter = own(world, (entity) => entity.type === 'towncenter')[0];
+    world.applyCommand(0, { t: 'delete', id: townCenter.id });
+    tick(world, 1);
+    expect(world.players[0].alive).toBe(false);
+    expect(world.gameOver).toBe(true);
+    expect(world.winner).toBe(1);
   });
 
   it('reallocates roles without allowing any role below one', () => {

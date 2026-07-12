@@ -77,7 +77,8 @@ export class World {
       this.players.push({
         id: i, name: p.name, color: p.color, isAI: p.isAI, aiLevel: p.aiLevel,
         alive: true, resigned: false, age: 0,
-        stock: { ...START_STOCK }, pop: 0, popCap: 0, villagerPop: 0, militaryPop: 0, techs: {},
+        stock: { ...START_STOCK }, pop: 0, popCap: 0, villagerPop: 0, militaryPop: 0,
+        villagerSpawnRole: 'food', techs: {},
         stats: {
           gathered: { food: 0, wood: 0, gold: 0, stone: 0 },
           unitsTrained: 0, unitsLost: 0, unitsKilled: 0, buildingsRazed: 0, buildingsLost: 0,
@@ -160,7 +161,8 @@ export class World {
     for (const entity of this.entities.values()) {
       if (entity.id !== excludeId && entity.kind === 'unit' && entity.type === 'villager' && entity.owner === owner) counts[entity.villagerRole]++;
     }
-    return VILLAGER_ROLES.reduce((best, role) => counts[role] < counts[best] ? role : best, VILLAGER_ROLES[0]);
+    const missing = VILLAGER_ROLES.find((role) => counts[role] === 0);
+    return missing ?? this.players[owner].villagerSpawnRole;
   }
 
   createBuilding(owner: number, type: BuildingTypeId, tx: number, ty: number, completed = false): Entity {
@@ -245,7 +247,8 @@ export class World {
   }
 
   canPlaceBuilding(player: number, type: BuildingTypeId, tx: number, ty: number): boolean {
-    if (this.isModern() && (type === 'house' || type === 'lumbercamp' || type === 'minecamp')) return false;
+    if (this.isModern() && (type === 'towncenter' || type === 'house' || type === 'farm'
+      || type === 'lumbercamp' || type === 'minecamp')) return false;
     const d = BUILDINGS[type];
     if (this.players[player].age < d.age) return false;
     if (!this.grid.rectFree(tx, ty, d.w, d.h)) return false;
@@ -391,7 +394,8 @@ export class World {
       }
       case 'build': {
         if (!isBuildingType(cmd.building)) return;
-        if (this.isModern() && (cmd.building === 'house' || cmd.building === 'lumbercamp' || cmd.building === 'minecamp')) return;
+        if (this.isModern() && (cmd.building === 'towncenter' || cmd.building === 'house' || cmd.building === 'farm'
+          || cmd.building === 'lumbercamp' || cmd.building === 'minecamp')) return;
         const d = BUILDINGS[cmd.building];
         const villagers = this.ownedUnits(player, cmd.units).filter((u) => u.type === 'villager');
         if (!this.isModern() && villagers.length === 0) return;
@@ -511,6 +515,11 @@ export class World {
       case 'allocateVillager': {
         if (!this.isModern() || !VILLAGER_ROLES.includes(cmd.role) || (cmd.delta !== -1 && cmd.delta !== 1)) return;
         this.adjustModernVillagerAllocation(player, cmd.role, cmd.delta, cmd.from);
+        break;
+      }
+      case 'setVillagerSpawnRole': {
+        if (!this.isModern() || !VILLAGER_ROLES.includes(cmd.role)) return;
+        p.villagerSpawnRole = cmd.role;
         break;
       }
       case 'resign': {
@@ -918,12 +927,12 @@ export class World {
         } else {
           u.carry++;
         }
-        if (!isFarm) {
+        if (!isFarm && !(this.isModern() && gives === 'food')) {
           node!.amount--;
           this.ev('gatherTick', node!.x, node!.y, { ent: u.id, entType: node!.type, data: node!.amount });
           if (node!.amount <= 0) this.depleteNode(node!);
         } else {
-          this.ev('gatherTick', node!.x, node!.y, { ent: u.id, entType: 'farm' });
+          this.ev('gatherTick', node!.x, node!.y, { ent: u.id, entType: isFarm ? 'farm' : node!.type });
         }
       }
     } else {
@@ -1489,13 +1498,16 @@ export class World {
   private checkVictory() {
     for (const p of this.players) {
       if (!p.alive) continue;
-      let buildings = 0, units = 0;
+      let buildings = 0, units = 0, townCenters = 0;
       for (const e of this.entities.values()) {
         if (e.owner !== p.id) continue;
-        if (e.kind === 'building') buildings++;
+        if (e.kind === 'building') {
+          buildings++;
+          if (e.type === 'towncenter') townCenters++;
+        }
         else if (e.kind === 'unit') units++;
       }
-      if (p.resigned || (buildings === 0 && units === 0)) {
+      if (p.resigned || (this.isModern() ? townCenters === 0 : buildings === 0 && units === 0)) {
         p.alive = false;
         this.ev('playerDefeated', 0, 0, { player: p.id });
         // remaining entities of a defeated player are removed
@@ -1531,6 +1543,7 @@ export class World {
       mix(p.age + (p.alive ? 16 : 0));
       mix(p.pop + p.popCap * 256);
       mix(p.villagerPop + p.militaryPop * 256);
+      mix(ROLE_INDEX[p.villagerSpawnRole]);
       mix(this.aiStates[p.id].lastWave);
     }
     for (const e of this.entities.values()) {

@@ -84,7 +84,7 @@ export function aiThink(world: World, pid: number) {
 
   // farms once wild food thins out
   const farms = countAll('farm');
-  if (farms < tune.maxFarms[p.age] && wildFoodNear(world, tc) < 3 && !hasFoundation(buildings, 'farm')) {
+  if (!world.isModern() && farms < tune.maxFarms[p.age] && wildFoodNear(world, tc) < 3 && !hasFoundation(buildings, 'farm')) {
     tryBuild(world, pid, villagers, 'farm', tc, 8);
   }
 

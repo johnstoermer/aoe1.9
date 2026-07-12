@@ -216,6 +216,34 @@ body {
   min-height: 148px;
 }
 
+.command-area {
+  width: 272px;
+}
+
+.modern-villager-progress {
+  margin-bottom: 4px;
+  font-size: 10px;
+}
+
+.modern-villager-progress > span {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.modern-villager-progress-track {
+  height: 9px;
+  padding: 1px;
+  background: #fff;
+  box-shadow: inset 1px 1px 0 #808080, inset -1px -1px 0 #fff;
+}
+
+.modern-villager-progress-fill {
+  width: 0;
+  height: 100%;
+  background: repeating-linear-gradient(to right, #000080 0 9px, #1084d0 9px 18px);
+  transition: width 120ms linear;
+}
+
 .sel-info {
   width: 152px;
   display: flex;
@@ -323,6 +351,42 @@ body {
 
 .cmd-btn:disabled img {
   filter: grayscale(1) brightness(1.15);
+}
+
+.modern-role-command {
+  position: relative;
+  width: 52px;
+  height: 52px;
+}
+
+.modern-role-command .cmd-btn {
+  position: absolute;
+  inset: 0;
+}
+
+.modern-role-command .role-adjust {
+  position: absolute;
+  z-index: 2;
+  bottom: 2px;
+  width: 16px;
+  min-width: 0;
+  height: 15px;
+  padding: 0;
+  font-size: 11px;
+  line-height: 11px;
+}
+
+.modern-role-command .role-remove {
+  right: 18px;
+}
+
+.modern-role-command .role-add {
+  right: 2px;
+}
+
+.modern-role-command .count {
+  bottom: auto;
+  top: 1px;
 }
 
 .cmd-btn.selected {

@@ -34,6 +34,9 @@ export class Hud {
   private ageSpan!: HTMLSpanElement;
   private idleBtn!: HTMLButtonElement;
   private allocationSpan!: HTMLSpanElement;
+  private modernVillagerProgress!: HTMLDivElement;
+  private modernVillagerProgressFill!: HTMLDivElement;
+  private modernVillagerProgressLabel!: HTMLSpanElement;
   private cmdGrid!: HTMLDivElement;
   private selInfo!: HTMLDivElement;
   private minimap!: HTMLCanvasElement;
@@ -272,7 +275,14 @@ export class Hud {
     win.root.id = 'panel-window';
     this.selInfo = el('div', { class: 'sel-info' }) as HTMLDivElement;
     this.cmdGrid = el('div', { class: 'cmd-grid' }) as HTMLDivElement;
-    win.body.append(this.selInfo, this.cmdGrid);
+    this.modernVillagerProgressFill = el('div', { class: 'modern-villager-progress-fill' }) as HTMLDivElement;
+    this.modernVillagerProgressLabel = el('span', { text: 'New Villager' }) as HTMLSpanElement;
+    this.modernVillagerProgress = el('div', { class: 'modern-villager-progress' },
+      this.modernVillagerProgressLabel,
+      el('div', { class: 'modern-villager-progress-track' }, this.modernVillagerProgressFill),
+    ) as HTMLDivElement;
+    const commandArea = el('div', { class: 'command-area' }, this.modernVillagerProgress, this.cmdGrid);
+    win.body.append(this.selInfo, commandArea);
     this.root.appendChild(win.root);
   }
 
@@ -283,7 +293,12 @@ export class Hud {
     this.selInfo.textContent = '';
     this.cmdGrid.textContent = '';
     const sel = this.game.selectedEntities();
-    if (this.game.isModernMode()) this.buildModernRoleCommands();
+    if (this.game.isModernMode()) {
+      this.refreshModernVillagerProgress();
+      this.buildModernRoleCommands();
+    } else {
+      this.modernVillagerProgress.style.display = 'none';
+    }
 
     if (sel.length === 0) {
       this.selInfo.appendChild(el('p', { text: 'Nothing selected.' }));
@@ -523,11 +538,65 @@ export class Hud {
       const button = this.cmdButton({
         icon: glyphIcon(glyphs[role], colors[role], '#fff'),
         count: counts[role],
-        tooltip: () => `${modernRoleLabel(role)}: ${counts[role]} assigned. Click to send newly created villagers to this role.`,
+        tooltip: () => `${modernRoleLabel(role)}: ${counts[role]} assigned. Click to send newly created villagers to this role. Use − and + to reassign existing villagers.`,
         onClick: () => this.game.setVillagerSpawnRole(role),
       });
       if (player.villagerSpawnRole === role) button.classList.add('selected');
+      const cell = el('div', { class: 'modern-role-command' });
+      this.cmdGrid.insertBefore(cell, button);
+      cell.appendChild(button);
+      const canRemove = counts[role] > 1;
+      const canAdd = VILLAGER_ROLES.some((candidate) => candidate !== role && counts[candidate] > 1);
+      const remove = el('button', {
+        class: 'role-adjust role-remove',
+        text: '−',
+        title: canRemove ? `Move one ${modernRoleLabel(role)} to the least-filled role` : 'Every role must keep at least one villager',
+        'aria-label': `Remove one ${modernRoleLabel(role)}`,
+      }) as HTMLButtonElement;
+      const add = el('button', {
+        class: 'role-adjust role-add',
+        text: '+',
+        title: canAdd ? `Move one villager into ${modernRoleLabel(role)}` : 'No other role can spare a villager',
+        'aria-label': `Add one ${modernRoleLabel(role)}`,
+      }) as HTMLButtonElement;
+      remove.disabled = !canRemove;
+      add.disabled = !canAdd;
+      remove.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!remove.disabled) this.game.adjustVillagerRole(role, -1);
+      });
+      add.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!add.disabled) this.game.adjustVillagerRole(role, 1);
+      });
+      cell.append(remove, add);
     }
+  }
+
+  private refreshModernVillagerProgress() {
+    this.modernVillagerProgress.style.display = '';
+    const player = this.game.world.players[this.game.you];
+    if (player.villagerPop >= MODERN_VILLAGER_CAP) {
+      this.modernVillagerProgressLabel.textContent = 'Villager cap reached';
+      this.modernVillagerProgressFill.style.width = '100%';
+      return;
+    }
+    let progress = 0;
+    for (const entity of this.game.world.entities.values()) {
+      if (entity.kind !== 'building' || entity.owner !== this.game.you || entity.type !== 'towncenter') continue;
+      const item = entity.trainQueue.find((queued) => queued.unit === 'villager');
+      if (item) {
+        progress = item.progress / UNITS.villager.trainTime;
+        break;
+      }
+    }
+    const percent = Math.max(0, Math.min(100, Math.round(progress * 100)));
+    this.modernVillagerProgressLabel.textContent = progress > 0
+      ? `New Villager — ${percent}%`
+      : `New Villager — waiting for ${UNITS.villager.cost.food} food`;
+    this.modernVillagerProgressFill.style.width = `${percent}%`;
   }
 
   private buildModernConstructionCommands() {

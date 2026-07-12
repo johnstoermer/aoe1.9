@@ -142,6 +142,8 @@ describe('modern mode economy', () => {
     expect(roleCounts(world).food).toBe(2);
     world.applyCommand(0, { t: 'allocateVillager', role: 'wood', delta: 1 });
     expect(roleCounts(world)).toEqual({ food: 1, wood: 2, gold: 1, stone: 1, builder: 1 });
+    world.applyCommand(0, { t: 'allocateVillager', role: 'wood', delta: -1 });
+    expect(roleCounts(world)).toEqual({ food: 2, wood: 1, gold: 1, stone: 1, builder: 1 });
     world.applyCommand(0, { t: 'allocateVillager', role: 'food', delta: -1 });
     expect(roleCounts(world).food).toBe(1);
   });

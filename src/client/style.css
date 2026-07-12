@@ -562,6 +562,13 @@ kbd {
   gap: 8px;
 }
 
+.animation-tester-preview {
+  width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .animation-tester-canvas {
   width: 640px;
   height: 430px;
@@ -575,6 +582,52 @@ kbd {
   display: flex;
   flex-direction: column;
   gap: 7px;
+}
+
+.tester-timeline-panel {
+  padding: 6px;
+}
+
+.tester-timeline-readout {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 3px;
+}
+
+.tester-timeline {
+  --slice-start: 0%;
+  --slice-end: 100%;
+  appearance: none;
+  width: 100%;
+  height: 14px;
+  margin: 0 0 5px;
+  border: 2px inset #fff;
+  background: linear-gradient(to right,
+    #777 0 var(--slice-start),
+    #000080 var(--slice-start) var(--slice-end),
+    #777 var(--slice-end) 100%);
+}
+
+.tester-timeline::-webkit-slider-thumb {
+  appearance: none;
+  width: 9px;
+  height: 18px;
+  border: 2px outset #fff;
+  background: silver;
+}
+
+.tester-timeline::-moz-range-thumb {
+  width: 7px;
+  height: 16px;
+  border: 2px outset #fff;
+  border-radius: 0;
+  background: silver;
+}
+
+.tester-timeline-buttons {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
 }
 
 .tester-transform {

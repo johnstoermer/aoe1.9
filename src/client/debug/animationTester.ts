@@ -20,6 +20,7 @@ const WEAPONS = [
   ['Large Axe (2H)', '/assets/models/weapons/axe_2handed_Large.gltf'],
   ['Hammer', '/assets/models/weapons/hammer_A.gltf'],
 ] as const;
+const ANIMATION_FPS = 30;
 
 export function showAnimationTester(onBack: () => void): () => void {
   const screen = el('div', { class: 'screen desktop animation-tester-screen' }) as HTMLDivElement;
@@ -31,6 +32,21 @@ export function showAnimationTester(onBack: () => void): () => void {
   const canvas = el('canvas', { class: 'animation-tester-canvas' }) as HTMLCanvasElement;
   canvas.width = 640;
   canvas.height = 430;
+  const timeline = el('input', { class: 'tester-timeline', type: 'range', min: '0', max: '1', step: '1', value: '0' }) as HTMLInputElement;
+  const frameReadout = el('span', { text: 'Frame 0 / 0' });
+  const sliceReadout = el('span', { text: 'Slice 0–0' });
+  const previousFrame = el('button', { text: '◀ Frame' });
+  const nextFrame = el('button', { text: 'Frame ▶' });
+  const setIn = el('button', { text: 'Set In' });
+  const setOut = el('button', { text: 'Set Out' });
+  const playSlice = el('button', { text: 'Play Slice' });
+  const copySlice = el('button', { text: 'Copy Slice JSON' });
+  const timelinePanel = el('div', { class: 'sunken-panel tester-timeline-panel' },
+    el('div', { class: 'tester-timeline-readout' }, frameReadout, sliceReadout),
+    timeline,
+    el('div', { class: 'tester-timeline-buttons' }, previousFrame, nextFrame, setIn, setOut, playSlice, copySlice),
+  );
+  const preview = el('div', { class: 'animation-tester-preview' }, canvas, timelinePanel);
   const controls = el('div', { class: 'animation-tester-controls' });
   const character = labeledSelect('Character', CHARACTERS.map((type) => [type, UNITS[type].name]));
   const animation = labeledSelect('Animation', []);
@@ -58,7 +74,7 @@ export function showAnimationTester(onBack: () => void): () => void {
     el('div', { class: 'tester-button-grid' }, savePlacement, resetPlacement, copyPlacement, copyAllPlacements),
     speedRow, play, reset, status, back,
   );
-  win.body.append(canvas, controls);
+  win.body.append(preview, controls);
   screen.appendChild(win.root);
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
@@ -83,6 +99,10 @@ export function showAnimationTester(onBack: () => void): () => void {
   let equipmentObject: THREE.Group | null = null;
   let mixer: THREE.AnimationMixer | null = null;
   let action: THREE.AnimationAction | null = null;
+  let sourceClip: THREE.AnimationClip | null = null;
+  let sliceStart = 0;
+  let sliceEnd = 0;
+  let sliceMode = false;
   let playing = true;
   let disposed = false;
   let requestId = 0;
@@ -105,7 +125,7 @@ export function showAnimationTester(onBack: () => void): () => void {
     mixer = new THREE.AnimationMixer(characterObject);
     refreshAnimations(type);
     await attachWeapon(type, characterObject, weapon.select.value);
-    playAnimation();
+    selectAnimation();
   };
 
   const attachWeapon = async (type: UnitTypeId, object: THREE.Object3D, selected: string) => {
@@ -135,15 +155,32 @@ export function showAnimationTester(onBack: () => void): () => void {
     status.textContent = `${UNITS[type].name} (${UNIT_VISUALS[type].rigSize ?? 'medium'} rig): ${path.split('/').pop()} attached to ${slot.name} through equipment.adapter.`;
   };
 
-  const playAnimation = () => {
+  const startClip = (clip: THREE.AnimationClip, sliced: boolean) => {
     if (!mixer) return;
     mixer.stopAllAction();
-    const rigSize = UNIT_VISUALS[character.select.value]?.rigSize ?? 'medium';
-    const clip = getAnimationClips(rigSize).find((candidate) => candidate.name === animation.select.value);
-    if (!clip) return;
     action = mixer.clipAction(clip);
     action.setLoop(THREE.LoopRepeat, Infinity).play();
     action.paused = !playing;
+    sliceMode = sliced;
+  };
+
+  const selectAnimation = () => {
+    const rigSize = UNIT_VISUALS[character.select.value]?.rigSize ?? 'medium';
+    sourceClip = getAnimationClips(rigSize).find((candidate) => candidate.name === animation.select.value) ?? null;
+    if (!sourceClip) return;
+    sliceStart = 0;
+    sliceEnd = Math.max(0, Math.round(sourceClip.duration * ANIMATION_FPS) - 1);
+    timeline.max = String(sliceEnd);
+    timeline.value = '0';
+    updateTimelineLabels(0);
+    startClip(sourceClip, false);
+  };
+
+  const playAnimation = () => {
+    if (sourceClip) {
+      startClip(sourceClip, false);
+      updateTimelineLabels(0);
+    }
   };
 
   const refreshAnimations = (type: string) => {
@@ -152,6 +189,49 @@ export function showAnimationTester(onBack: () => void): () => void {
     animation.select.textContent = '';
     for (const clip of clips) animation.select.appendChild(el('option', { value: clip.name, text: clip.name }));
     animation.select.value = clips.some((clip) => clip.name === visual.anims.idle) ? visual.anims.idle : clips[0]?.name ?? '';
+  };
+
+  const currentSourceFrame = () => {
+    if (!action) return Number(timeline.value);
+    const offset = sliceMode ? sliceStart : 0;
+    return Math.min(Number(timeline.max), offset + Math.floor(action.time * ANIMATION_FPS + 0.0001));
+  };
+
+  const updateTimelineLabels = (frame: number) => {
+    const max = Number(timeline.max);
+    timeline.value = String(Math.max(0, Math.min(max, frame)));
+    frameReadout.textContent = `Frame ${timeline.value} / ${max}  (${(Number(timeline.value) / ANIMATION_FPS).toFixed(3)}s)`;
+    sliceReadout.textContent = `Slice ${sliceStart}–${sliceEnd}  (${((sliceEnd - sliceStart + 1) / ANIMATION_FPS).toFixed(3)}s)`;
+    const denominator = Math.max(1, max);
+    timeline.style.setProperty('--slice-start', `${sliceStart / denominator * 100}%`);
+    timeline.style.setProperty('--slice-end', `${sliceEnd / denominator * 100}%`);
+  };
+
+  const scrubToFrame = (frame: number) => {
+    if (!sourceClip || !mixer) return;
+    playing = false;
+    play.textContent = 'Play';
+    startClip(sourceClip, false);
+    const clamped = Math.max(0, Math.min(Number(timeline.max), Math.round(frame)));
+    action!.time = Math.min(sourceClip.duration, clamped / ANIMATION_FPS);
+    action!.paused = true;
+    mixer.update(0);
+    updateTimelineLabels(clamped);
+  };
+
+  const playSelectedSlice = () => {
+    if (!sourceClip || sliceEnd < sliceStart) return;
+    const clip = THREE.AnimationUtils.subclip(
+      sourceClip,
+      `${sourceClip.name}_${sliceStart}_${sliceEnd}`,
+      sliceStart,
+      sliceEnd + 1,
+      ANIMATION_FPS,
+    );
+    playing = true;
+    play.textContent = 'Pause';
+    startClip(clip, true);
+    updateTimelineLabels(sliceStart);
   };
 
   const readPlacement = (): EquipmentPlacement => ({
@@ -176,7 +256,7 @@ export function showAnimationTester(onBack: () => void): () => void {
     .catch((error) => { status.textContent = `Load failed: ${String(error)}`; });
 
   character.select.addEventListener('change', () => void loadCharacter());
-  animation.select.addEventListener('change', playAnimation);
+  animation.select.addEventListener('change', selectAnimation);
   weapon.select.addEventListener('change', () => {
     if (weapon.select.value !== 'auto') hand.select.value = kayKitHandForEquipment(weapon.select.value);
     if (characterObject) void attachWeapon(character.select.value as UnitTypeId, characterObject, weapon.select.value);
@@ -205,7 +285,37 @@ export function showAnimationTester(onBack: () => void): () => void {
     play.textContent = playing ? 'Pause' : 'Play';
   });
   reset.addEventListener('click', () => { pivot.rotation.set(0, 0, 0); playAnimation(); });
+  timeline.addEventListener('input', () => scrubToFrame(Number(timeline.value)));
+  previousFrame.addEventListener('click', () => scrubToFrame(currentSourceFrame() - 1));
+  nextFrame.addEventListener('click', () => scrubToFrame(currentSourceFrame() + 1));
+  setIn.addEventListener('click', () => {
+    sliceStart = currentSourceFrame();
+    if (sliceEnd < sliceStart) sliceEnd = sliceStart;
+    updateTimelineLabels(sliceStart);
+  });
+  setOut.addEventListener('click', () => {
+    sliceEnd = currentSourceFrame();
+    if (sliceStart > sliceEnd) sliceStart = sliceEnd;
+    updateTimelineLabels(sliceEnd);
+  });
+  playSlice.addEventListener('click', playSelectedSlice);
+  copySlice.addEventListener('click', () => void copyAnimationSlice({
+    animation: sourceClip?.name ?? animation.select.value,
+    fps: ANIMATION_FPS,
+    startFrame: sliceStart,
+    endFrame: sliceEnd,
+    startTime: sliceStart / ANIMATION_FPS,
+    endTime: (sliceEnd + 1) / ANIMATION_FPS,
+  }, status));
   back.addEventListener('click', onBack);
+
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    scrubToFrame(currentSourceFrame() + (event.key === 'ArrowLeft' ? -1 : 1));
+  };
+  window.addEventListener('keydown', onKeyDown);
 
   let dragX: number | null = null;
   canvas.addEventListener('pointerdown', (event) => { dragX = event.clientX; canvas.setPointerCapture(event.pointerId); });
@@ -226,6 +336,7 @@ export function showAnimationTester(onBack: () => void): () => void {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     mixer?.update(dt * Number(speed.value) / 100);
+    if (playing && action) updateTimelineLabels(currentSourceFrame());
     renderer.render(scene, camera);
     raf = requestAnimationFrame(frame);
   };
@@ -234,6 +345,7 @@ export function showAnimationTester(onBack: () => void): () => void {
   return () => {
     disposed = true;
     cancelAnimationFrame(raf);
+    window.removeEventListener('keydown', onKeyDown);
     renderer.dispose();
     screen.remove();
   };
@@ -269,4 +381,19 @@ async function copyJson(value: unknown, status: HTMLElement) {
     textarea.remove();
   }
   status.textContent = 'Placement JSON copied. Send it back to update repository defaults.';
+}
+
+async function copyAnimationSlice(value: unknown, status: HTMLElement) {
+  const json = JSON.stringify(value, null, 2);
+  try {
+    await navigator.clipboard.writeText(json);
+  } catch {
+    const textarea = document.createElement('textarea');
+    textarea.value = json;
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    textarea.remove();
+  }
+  status.textContent = 'Animation slice JSON copied.';
 }

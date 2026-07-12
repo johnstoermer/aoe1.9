@@ -17,8 +17,10 @@ export interface UnitVisual {
     idle: string;
     move: string;
     attack?: string[];
+    attackSequence?: string[];
     death: string;
   };
+  layeredMove?: boolean;
   /** Animation played per gather kind (villager only). */
   gather?: Record<string, string>;
   rig: boolean; // skinned character using the shared animation library
@@ -91,7 +93,7 @@ export function resetEquipmentPlacement(type: string): EquipmentPlacement {
 export const UNIT_VISUALS: Record<string, UnitVisual> = {
   villager: {
     model: `${A}/units/Farmer_{ab}.glb`, height: 0.68, yaw: 0, rig: true, weapon: `${A}/weapons/hammer_A.gltf`,
-    anims: { idle: 'Idle_A', move: 'Walking_A', attack: ['Melee_Unarmed_Attack_Punch_A'], death: 'Death_A' },
+    anims: { idle: 'Idle_A', move: 'Running_A', attack: ['Melee_Unarmed_Attack_Punch_A'], death: 'Death_A' },
     gather: {
       tree: 'Chop', gold: 'Pickaxe', stone: 'Pickaxe',
       berries: 'PickUp', farm: 'Work_A', build: 'Hammer', carry: 'Walking_A',
@@ -111,26 +113,37 @@ export const UNIT_VISUALS: Record<string, UnitVisual> = {
   },
   bowman: {
     model: `${A}/units/Ranger.glb`, height: 0.72, yaw: 0, rig: true, weapon: `${A}/weapons/bow.gltf`,
-    anims: { idle: 'Idle_A', move: 'Running_A', attack: ['Ranged_Bow_Release'], death: 'Death_B' },
+    layeredMove: true,
+    anims: {
+      idle: 'Ranged_Bow_Idle', move: 'Running_A',
+      attackSequence: ['Ranged_Bow_Draw', 'Ranged_Bow_Release'],
+      death: 'Death_B',
+    },
   },
   crossbowman: {
     model: `${A}/units/Rogue.glb`, height: 0.72, yaw: 0, rig: true, weapon: `${A}/weapons/crossbow_2handed.gltf`,
-    anims: { idle: 'Ranged_2H_Idle', move: 'Running_A', attack: ['Ranged_Crossbow_Shoot'], death: 'Death_B' },
+    anims: {
+      idle: 'Ranged_2H_Idle', move: 'Running_A',
+      attackSequence: ['Ranged_2H_Aiming', 'Ranged_2H_Shoot', 'Ranged_2H_Reload'],
+      death: 'Death_B',
+    },
   },
   bruiser: {
-    model: `${A}/units/Barbarian_Large.glb`, height: 0.9, yaw: 0, rig: true, rigSize: 'large', weapon: `${A}/weapons/axe_2handed_Large.gltf`,
-    anims: { idle: 'Melee_2H_Idle', move: 'Running_A', attack: ['Melee_2H_Attack', 'Melee_2H_Slam'], death: 'Death_A' },
+    model: `${A}/units/Barbarian_Large.glb`, height: 1.08, yaw: 0, rig: true, rigSize: 'large', weapon: `${A}/weapons/axe_2handed_Large.gltf`,
+    layeredMove: true,
+    anims: { idle: 'Melee_2H_Idle', move: 'Running_A', attack: ['Melee_2H_Attack'], death: 'Death_A' },
   },
   vanguard: {
-    model: `${A}/units/BlackKnight.glb`, height: 0.94, yaw: 0, rig: true, rigSize: 'large', weapon: `${A}/weapons/axe_2handed_Large.gltf`,
+    model: `${A}/units/BlackKnight.glb`, height: 1.14, yaw: 0, rig: true, rigSize: 'large', weapon: `${A}/weapons/axe_2handed_Large.gltf`,
+    layeredMove: true,
     anims: {
       idle: 'Melee_2H_Idle', move: 'Running_A',
-      attack: ['Melee_2H_Attack', 'Melee_2H_Slam'],
+      attack: ['Melee_2H_Attack'],
       death: 'Death_A',
     },
   },
   catapult: {
-    model: `${A}/props/{c}/catapult_{c}_full.gltf`, height: 0.62, yaw: 0, rig: false,
+    model: `${A}/props/{c}/catapult_{c}_full.gltf`, height: 0.92, yaw: 0, rig: false,
     anims: { idle: '', move: '', death: '' },
   },
 };

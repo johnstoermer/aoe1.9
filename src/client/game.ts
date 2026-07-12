@@ -296,12 +296,13 @@ export class GameClient {
       const cx = toTiles(e.x), cy = toTiles(e.y);
       const x = prev ? prev.x + (cx - prev.x) * alpha : cx;
       const y = prev ? prev.y + (cy - prev.y) * alpha : cy;
+      const simMoving = !!prev && Math.hypot(cx - prev.x, cy - prev.y) > 0.001;
 
       // facing: toward engaged target or order point
       let fx = 0, fy = 0;
       const tgt = this.world.entities.get(e.engagedId || (e.order === 'gather' || e.order === 'build' || e.order === 'attack' ? e.targetId : 0));
       if (tgt) { fx = toTiles(tgt.x) - cx; fy = toTiles(tgt.y) - cy; }
-      view.update(dt, x, y, fx, fy);
+      view.update(dt, x, y, fx, fy, simMoving);
       view.group.visible = e.owner === this.you || this.world.isVisibleTo(this.you, e);
 
       // ambient loop: movement vs job vs idle
@@ -310,7 +311,7 @@ export class GameClient {
         const unitData = UNITS[e.type as UnitTypeId];
         const anims = viewAnims(e.type);
         if (vis) {
-          view.setLoop(anims.move, 0.14, Math.max(0.7, toTiles(unitData.speed) * TICK_RATE / 1.1));
+          view.setMovementLoop(anims.move, anims.idle, Math.max(0.7, toTiles(unitData.speed) * TICK_RATE / 1.1));
         } else if (e.order !== 'gather' && e.order !== 'build') {
           view.setLoop(anims.idle);
         }
@@ -396,8 +397,13 @@ export class GameClient {
           const view = this.unitViews.get(ev.ent!);
           const e = this.world.entities.get(ev.ent!);
           if (view && e) {
-            const anims = viewAnims(e.type).attack;
-            if (anims && anims.length > 0) {
+            const visual = viewAnims(e.type);
+            const sequence = visual.attackSequence;
+            if (sequence && sequence.length > 0) {
+              const durations = e.type === 'bowman' ? [0.5, 0.55] : [0.3, 0.3, 0.8];
+              view.playSequence(sequence, durations);
+            } else if (visual.attack && visual.attack.length > 0) {
+              const anims = visual.attack;
               const clip = anims[(ev.ent! * 31 + this.world.tick) % anims.length];
               const dur = UNITS[e.type as UnitTypeId].swingTime / TICK_RATE + 0.25;
               view.playOnce(clip, dur);

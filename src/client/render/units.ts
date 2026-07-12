@@ -102,6 +102,25 @@ export function modelPathFor(type: string, owner: number, entId: number): string
     .replace('{ab}', entId % 2 === 0 ? 'A' : 'B');
 }
 
+const LOWER_BODY_BONES = new Set([
+  'root', 'hips',
+  'upperlegl', 'upperlegr', 'lowerlegl', 'lowerlegr',
+  'footl', 'footr', 'toesl', 'toesr',
+]);
+
+function trackBoneName(track: THREE.KeyframeTrack): string {
+  const node = track.name.slice(0, track.name.lastIndexOf('.'));
+  return node.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function maskedClip(clip: THREE.AnimationClip, name: string, lowerBody: boolean): THREE.AnimationClip {
+  return new THREE.AnimationClip(
+    name,
+    clip.duration,
+    clip.tracks.filter((track) => LOWER_BODY_BONES.has(trackBoneName(track)) === lowerBody),
+  );
+}
+
 export class UnitView {
   readonly group = new THREE.Group();
   readonly pickMesh: THREE.Mesh;
@@ -110,7 +129,9 @@ export class UnitView {
   mixer: THREE.AnimationMixer | null = null;
   private actions = new Map<string, THREE.AnimationAction>();
   private currentLoop = '';
+  private loopActions: THREE.AnimationAction[] = [];
   private oneShot: THREE.AnimationAction | null = null;
+  private sequenceId = 0;
   private yawCurrent = 0;
   private yawOffset: number;
   private rigSize: 'medium' | 'large';
@@ -172,52 +193,104 @@ export class UnitView {
     return a;
   }
 
-  setLoop(name: string, fade = 0.16, timeScale = 1) {
-    if (!this.mixer || this.currentLoop === name) {
-      const cur = this.action(name);
-      if (cur) cur.timeScale = timeScale;
+  private maskedAction(name: string, lowerBody: boolean): THREE.AnimationAction | null {
+    if (!this.mixer) return null;
+    const key = `${name}#${lowerBody ? 'lower' : 'upper'}`;
+    let action = this.actions.get(key);
+    if (!action) {
+      const clip = getClip(name, this.rigSize);
+      if (!clip) return null;
+      action = this.mixer.clipAction(maskedClip(clip, key, lowerBody));
+      this.actions.set(key, action);
+    }
+    return action;
+  }
+
+  private setLoops(key: string, actions: { action: THREE.AnimationAction; timeScale: number }[], fade: number) {
+    if (this.currentLoop === key) {
+      for (const next of actions) next.action.timeScale = next.timeScale;
       return;
     }
-    const next = this.action(name);
-    if (!next) return;
-    const prev = this.currentLoop ? this.action(this.currentLoop) : null;
-    this.currentLoop = name;
-    next.reset();
-    next.timeScale = timeScale;
-    next.setLoop(THREE.LoopRepeat, Infinity);
-    next.enabled = true;
-    if (prev && prev !== next) next.crossFadeFrom(prev, fade, false);
-    else next.fadeIn(fade);
-    next.play();
+    const previous = this.loopActions;
+    this.currentLoop = key;
+    this.loopActions = actions.map((next) => next.action);
+    for (const next of actions) {
+      next.action.reset();
+      next.action.timeScale = next.timeScale;
+      next.action.setLoop(THREE.LoopRepeat, Infinity);
+      next.action.enabled = true;
+      next.action.setEffectiveWeight(1);
+      next.action.fadeIn(fade).play();
+    }
+    for (const old of previous) {
+      if (!this.loopActions.includes(old)) old.fadeOut(fade);
+    }
+  }
+
+  setLoop(name: string, fade = 0.16, timeScale = 1) {
+    const action = this.action(name);
+    if (action) this.setLoops(name, [{ action, timeScale }], fade);
+  }
+
+  setMovementLoop(move: string, idle: string, timeScale: number, fade = 0.14) {
+    if (this.oneShot) {
+      this.sequenceId++;
+      this.oneShot.fadeOut(0.06);
+      this.oneShot = null;
+    }
+    if (!UNIT_VISUALS[this.type].layeredMove) {
+      this.setLoop(move, fade, timeScale);
+      return;
+    }
+    const lower = this.maskedAction(move, true);
+    const upper = this.maskedAction(idle, false);
+    if (lower && upper) {
+      this.setLoops(`${move}#lower+${idle}#upper`, [
+        { action: lower, timeScale },
+        { action: upper, timeScale: 1 },
+      ], fade);
+    } else {
+      this.setLoop(move, fade, timeScale);
+    }
   }
 
   /** Play a clip once (attack swing, chop, hammer), then resume the loop. */
   playOnce(name: string, duration?: number) {
-    const a = this.action(name);
-    if (!a || !this.mixer) return;
-    if (this.oneShot === a && a.isRunning()) return;
-    const clip = a.getClip();
-    a.reset();
-    a.setLoop(THREE.LoopOnce, 1);
-    a.clampWhenFinished = true;
-    a.timeScale = duration ? clip.duration / duration : 1;
-    const loop = this.currentLoop ? this.action(this.currentLoop) : null;
-    if (loop) loop.setEffectiveWeight(0.15);
-    a.fadeIn(0.06);
-    a.play();
-    this.oneShot = a;
-    const onDone = (e: { action: THREE.AnimationAction }) => {
-      if (e.action !== a) return;
-      this.mixer!.removeEventListener('finished', onDone);
-      if (this.dead) return; // death pose owns the rig now
-      a.fadeOut(0.14);
-      // only restore if a newer one-shot hasn't taken over
-      if (this.oneShot === a) {
-        if (loop && this.currentLoop === loop.getClip().name) loop.setEffectiveWeight(1);
+    this.playSequence([name], duration ? [duration] : undefined);
+  }
+
+  playSequence(names: string[], durations?: number[]) {
+    if (!this.mixer || names.length === 0) return;
+    const actions = names.map((name) => this.action(name));
+    if (actions.some((action) => !action)) return;
+    const sequence = ++this.sequenceId;
+    if (this.oneShot) this.oneShot.fadeOut(0.06);
+    for (const loop of this.loopActions) loop.setEffectiveWeight(0.15);
+
+    const playStep = (index: number) => {
+      if (sequence !== this.sequenceId || this.dead) return;
+      if (index >= actions.length) {
         this.oneShot = null;
+        for (const loop of this.loopActions) loop.setEffectiveWeight(1);
+        return;
       }
+      const action = actions[index]!;
+      const duration = durations?.[index];
+      action.reset();
+      action.setLoop(THREE.LoopOnce, 1);
+      action.clampWhenFinished = true;
+      action.timeScale = duration ? action.getClip().duration / duration : 1;
+      action.fadeIn(0.06).play();
+      this.oneShot = action;
+      const onDone = (event: { action: THREE.AnimationAction }) => {
+        if (event.action !== action) return;
+        this.mixer!.removeEventListener('finished', onDone);
+        action.fadeOut(0.1);
+        playStep(index + 1);
+      };
+      this.mixer!.addEventListener('finished', onDone);
     };
-    this.mixer.addEventListener('finished', onDone);
+    playStep(0);
   }
 
   /** True while a one-shot (attack/gather swing) is playing. */
@@ -227,6 +300,7 @@ export class UnitView {
 
   playDeath() {
     this.dead = true;
+    this.sequenceId++;
     this.oneShot = null;
     if (!this.mixer) {
       // catapult: tip over
@@ -245,12 +319,12 @@ export class UnitView {
   }
 
   /** Called each render frame with interpolated sim position (tiles). */
-  update(dt: number, x: number, y: number, facingX: number, facingY: number) {
+  update(dt: number, x: number, y: number, facingX: number, facingY: number, simMoving?: boolean) {
     this.group.position.set(x, 0, y);
     const dx = x - this.lastX;
     const dy = y - this.lastY;
     const speed = Math.hypot(dx, dy) / Math.max(dt, 1e-4);
-    this.moving = speed > 0.12;
+    this.moving = simMoving ?? speed > 0.12;
     this.lastX = x;
     this.lastY = y;
 

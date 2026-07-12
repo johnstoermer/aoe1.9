@@ -69,7 +69,7 @@ export class World {
     this.setup = setup;
     this.size = setup.mapSize;
     this.prng = new Prng(setup.seed);
-    this.map = generateMap(setup.seed, setup.mapSize, setup.players.length);
+    this.map = generateMap(setup.seed, setup.mapSize, setup.players.length, setup.mapType ?? 'arabia');
     this.grid = new Grid(setup.mapSize);
 
     for (let i = 0; i < setup.players.length; i++) {
@@ -83,7 +83,9 @@ export class World {
           unitsTrained: 0, unitsLost: 0, unitsKilled: 0, buildingsRazed: 0, buildingsLost: 0,
         },
       });
-      this.visibility.push(new Uint8Array(this.size * this.size));
+      const visibility = new Uint8Array(this.size * this.size);
+      if (setup.discovered !== false) visibility.fill(1);
+      this.visibility.push(visibility);
       this.aiStates.push({ lastWave: 0, waveSize: 6 });
       this.lastAlert.push(-ALERT_COOLDOWN);
     }
@@ -108,6 +110,7 @@ export class World {
         const y = tc.y + ((fp(2.2) * dirSin(k)) >> 12);
         this.createUnit(i, 'villager', x, y);
       }
+      if (setup.mapType === 'arena') this.createArenaWalls(i, s.tx + 1, s.ty + 1);
     }
     this.updateVisibility(true);
   }
@@ -125,9 +128,22 @@ export class World {
       buildProgress: 0, trainQueue: [], rallyX: -1, rallyY: -1, rallyTargetId: 0,
       tileX: 0, tileY: 0, amount: 0,
       fromId: 0, projT: 0, projDur: 0, srcX: 0, srcY: 0, splash: 0, dmg: 0,
+      garrisonedIn: 0, garrisonedIds: [], lastCombatTick: -100000,
     };
     this.entities.set(e.id, e);
     return e;
+  }
+
+  private createArenaWalls(owner: number, cx: number, cy: number) {
+    const radius = 6;
+    for (let x = cx - radius; x <= cx + radius; x++) {
+      this.createBuilding(owner, 'stonewall', x, cy - radius, true);
+      if (Math.abs(x - cx) > 1) this.createBuilding(owner, 'stonewall', x, cy + radius, true);
+    }
+    for (let y = cy - radius + 1; y < cy + radius; y++) {
+      this.createBuilding(owner, 'stonewall', cx - radius, y, true);
+      this.createBuilding(owner, 'stonewall', cx + radius, y, true);
+    }
   }
 
   createUnit(owner: number, type: UnitTypeId, x: number, y: number): Entity {
@@ -282,6 +298,10 @@ export class World {
 
     for (const e of this.entities.values()) {
       if (e.kind === 'unit') {
+        if (e.garrisonedIn) {
+          this.players[e.owner].pop++;
+          continue;
+        }
         const ti = (e.y >> FP_BITS) * this.size + (e.x >> FP_BITS);
         let b = this.buckets.get(ti);
         if (!b) this.buckets.set(ti, (b = []));
@@ -352,14 +372,14 @@ export class World {
         const b = this.createBuilding(player, cmd.building, cmd.tx, cmd.ty);
         this.evictUnitsFrom(cmd.tx, cmd.ty, d.w, d.h);
         this.ev('buildingPlaced', b.x, b.y, { ent: b.id, entType: b.type, player });
-        for (const u of villagers) this.giveOrder(u, { order: 'build', x: b.x, y: b.y, targetId: b.id }, false);
+        for (const u of villagers) this.giveOrder(u, { order: 'build', x: b.x, y: b.y, targetId: b.id }, cmd.queue === true);
         break;
       }
       case 'buildmore': {
         const t = this.entities.get(cmd.target);
         if (!t || t.kind !== 'building' || t.owner !== player || this.isBuildingComplete(t)) return;
         for (const u of this.ownedUnits(player, cmd.units)) {
-          if (u.type === 'villager') this.giveOrder(u, { order: 'build', x: t.x, y: t.y, targetId: t.id }, false);
+          if (u.type === 'villager') this.giveOrder(u, { order: 'build', x: t.x, y: t.y, targetId: t.id }, cmd.queue === true);
         }
         break;
       }
@@ -414,6 +434,35 @@ export class World {
         if (e && e.owner === player && (e.kind === 'unit' || e.kind === 'building')) {
           this.kill(e, -1);
         }
+        break;
+      }
+      case 'garrison': {
+        const building = this.entities.get(cmd.building);
+        if (!building || building.kind !== 'building' || building.owner !== player
+          || building.type !== 'towncenter' || !this.isBuildingComplete(building)) return;
+        for (const unit of this.ownedUnits(player, cmd.units)) {
+          if (unit.type !== 'villager' || unit.garrisonedIn || building.garrisonedIds.length >= 10) continue;
+          unit.garrisonedIn = building.id;
+          unit.x = building.x;
+          unit.y = building.y;
+          this.clearOrder(unit);
+          building.garrisonedIds.push(unit.id);
+        }
+        break;
+      }
+      case 'ungarrison': {
+        const building = this.entities.get(cmd.building);
+        if (!building || building.kind !== 'building' || building.owner !== player || building.type !== 'towncenter') return;
+        const data = BUILDINGS.towncenter;
+        for (const id of building.garrisonedIds) {
+          const unit = this.entities.get(id);
+          const spot = this.freeTileAround(building.tileX, building.tileY, data.w, data.h);
+          if (!unit || !spot) continue;
+          unit.garrisonedIn = 0;
+          unit.x = (spot.x << FP_BITS) + FP / 2;
+          unit.y = (spot.y << FP_BITS) + FP / 2;
+        }
+        building.garrisonedIds.length = 0;
         break;
       }
       case 'resign': {
@@ -621,7 +670,7 @@ export class World {
 
   private updateVillagers() {
     for (const e of this.entities.values()) {
-      if (e.kind !== 'unit' || e.type !== 'villager') continue;
+      if (e.kind !== 'unit' || e.type !== 'villager' || e.garrisonedIn) continue;
       if (e.order === 'gather') this.updateGather(e);
       else if (e.order === 'build') this.updateBuild(e);
     }
@@ -732,11 +781,20 @@ export class World {
     const b = this.entities.get(u.targetId);
     if (!b || b.kind !== 'building' || b.owner !== u.owner) { this.finishOrder(u); return; }
     if (this.isBuildingComplete(b)) {
-      // farms flow straight into gathering; everyone else stands down
+      // One builder occupies a completed farm; the rest continue their queue.
       if (b.type === 'farm' && this.isGatherable(u.owner, b)) {
-        this.startOrder(u, { order: 'gather', x: b.x, y: b.y, targetId: b.id });
+        const farmer = [...this.entities.values()]
+          .filter((e) => e.kind === 'unit' && e.type === 'villager' && e.owner === u.owner && e.targetId === b.id)
+          .sort((a, c) => a.id - c.id)[0];
+        if (farmer?.id === u.id) this.startOrder(u, { order: 'gather', x: b.x, y: b.y, targetId: b.id });
+        else this.finishOrder(u);
       } else {
-        this.finishOrder(u);
+        if (u.queuedOrders.length > 0) this.finishOrder(u);
+        else {
+          const next = this.nearestFoundation(u.owner, u.x, u.y, b.id);
+          if (next) this.startOrder(u, { order: 'build', x: next.x, y: next.y, targetId: next.id });
+          else this.finishOrder(u);
+        }
       }
       return;
     }
@@ -748,6 +806,17 @@ export class World {
     } else {
       this.ensurePathToEntity(u, b);
     }
+  }
+
+  private nearestFoundation(owner: number, x: number, y: number, exclude: number): Entity | null {
+    let best: Entity | null = null;
+    let bestDistance = fp(18) * fp(18);
+    for (const entity of this.entities.values()) {
+      if (entity.id === exclude || entity.kind !== 'building' || entity.owner !== owner || this.isBuildingComplete(entity)) continue;
+      const distance = distSq(x, y, entity.x, entity.y);
+      if (distance < bestDistance) { bestDistance = distance; best = entity; }
+    }
+    return best;
   }
 
   // -------------------------------------------------------------------------
@@ -768,8 +837,10 @@ export class World {
 
   private updateCombat() {
     for (const e of this.entities.values()) {
-      if (e.kind !== 'unit') continue;
+      if (e.kind !== 'unit' || e.garrisonedIn) continue;
       const d = UNITS[e.type as UnitTypeId];
+      if (d.regenerates && e.hp < e.maxHp && this.tick - e.lastCombatTick >= 5 * TICK_RATE
+        && (this.tick + e.id) % TICK_RATE === 0) e.hp++;
 
       // a started swing always plays out (its damage is locked in on landing)
       if (e.swingTick > 0) {
@@ -834,11 +905,11 @@ export class World {
       let reach = d.attackRange + d.radius + fp(0.35); // grace: target may shuffle mid-swing
       if (target.kind === 'building') reach += MELEE_BUILDING_BONUS;
       if (this.edgeDist(u.x, u.y, target) <= reach) {
-        const dmg = d.attack + this.meleeBonus(u.owner);
+        const dmg = this.attackDamage(u, target, d.attack + this.meleeBonus(u.owner));
         this.applyDamage(target, dmg, u.owner, u.id, 'melee');
       }
     } else if (d.attackKind === 'arrow') {
-      const dmg = d.attack + this.rangedBonus(u.owner);
+      const dmg = this.attackDamage(u, target, d.attack + this.rangedBonus(u.owner));
       this.spawnProjectile(u, target.id, target.x, target.y, dmg, 0);
       this.ev('arrowFire', u.x, u.y, { ent: u.id, player: u.owner });
     } else {
@@ -846,6 +917,22 @@ export class World {
       this.spawnProjectile(u, 0, target.x, target.y, dmg, d.splash ?? 0);
       this.ev('catapultFire', u.x, u.y, { ent: u.id, player: u.owner });
     }
+  }
+
+  private attackDamage(attacker: Entity, target: Entity, base: number): number {
+    const data = UNITS[attacker.type as UnitTypeId];
+    let damage = base;
+    if (target.kind === 'building') damage += data.buildingBonus ?? 0;
+    if (target.kind === 'unit') {
+      const targetData = UNITS[target.type as UnitTypeId];
+      if (data.role === 'archer' && targetData.role === 'infantry') damage = Math.trunc(damage * 7 / 4);
+      if (data.role === 'infantry' && targetData.role === 'brute') damage = Math.trunc(damage * 7 / 4);
+      if (data.role === 'brute' && targetData.role === 'archer') damage = Math.trunc(damage * 7 / 4);
+      if (attacker.type === 'crossbowman' && targetData.role === 'brute') damage = Math.trunc(damage * 3 / 2);
+      if (target.type === 'crossbowman' && data.role === 'infantry') damage *= 2;
+      if (targetData.role === 'siege') damage += data.siegeBonus ?? 0;
+    }
+    return Math.max(1, damage);
   }
 
   private spawnProjectile(from: Entity, targetId: number, tx: number, ty: number, dmg: number, splash: number) {
@@ -909,6 +996,9 @@ export class World {
       : 0;
     const dmg = Math.max(1, raw - armor);
     victim.hp -= dmg;
+    victim.lastCombatTick = this.tick;
+    const attacker = this.entities.get(byId);
+    if (attacker) attacker.lastCombatTick = this.tick;
     this.ev(kind === 'melee' ? 'meleeHit' : 'arrowHit', victim.x, victim.y,
       { ent: victim.id, entType: victim.type, data: dmg, player: victim.owner });
 
@@ -933,6 +1023,15 @@ export class World {
       if (byPlayer >= 0 && byPlayer !== e.owner) this.players[byPlayer].stats.unitsKilled++;
       this.ev('died', e.x, e.y, { ent: e.id, entType: e.type, player: e.owner });
     } else if (e.kind === 'building') {
+      for (const id of e.garrisonedIds) {
+        const unit = this.entities.get(id);
+        if (unit) {
+          unit.garrisonedIn = 0;
+          unit.x = e.x;
+          unit.y = e.y;
+        }
+      }
+      e.garrisonedIds.length = 0;
       this.players[e.owner].stats.buildingsLost++;
       if (byPlayer >= 0 && byPlayer !== e.owner) this.players[byPlayer].stats.buildingsRazed++;
       const d = BUILDINGS[e.type as BuildingTypeId];
@@ -1032,7 +1131,7 @@ export class World {
 
   private moveUnits() {
     for (const e of this.entities.values()) {
-      if (e.kind !== 'unit' || e.swingTick > 0) continue;
+      if (e.kind !== 'unit' || e.garrisonedIn || e.swingTick > 0) continue;
       const d = UNITS[e.type as UnitTypeId];
 
       if ((e.order === 'move' || e.order === 'attackmove') && !e.engagedId) {
@@ -1154,6 +1253,7 @@ export class World {
     }
     for (const e of this.entities.values()) {
       if (e.owner < 0) continue;
+      if (e.kind === 'unit' && e.garrisonedIn) continue;
       let sight = 0;
       if (e.kind === 'unit') sight = UNITS[e.type as UnitTypeId].sight;
       else if (e.kind === 'building') {

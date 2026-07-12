@@ -13,7 +13,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { WebSocket, WebSocketServer } from 'ws';
 import { DEFAULT_PORT, PROTOCOL_VERSION, type C2S, type RoomInfo, type S2C } from '../shared/protocol';
-import type { Command, Frame, GameSetup } from '../shared/types';
+import type { Command, Frame, GameSetup, MapTypeId } from '../shared/types';
 import { MAX_PLAYERS, TICK_MS } from '../shared/types';
 import { hashString } from '../shared/prng';
 
@@ -41,6 +41,9 @@ class Room {
   host: Peer;
   slots: Slot[] = [];
   mapSize = 80;
+  mapType: MapTypeId = 'arabia';
+  gameSpeed = 3;
+  discovered = true;
   started = false;
   // in-game state
   tick = 0;
@@ -48,6 +51,7 @@ class Room {
   hashes = new Map<number, Map<number, number>>(); // tick -> player -> hash
   desyncAnnounced = false;
   timer: ReturnType<typeof setInterval> | null = null;
+  frames: Frame[] = [];
 
   constructor(code: string, host: Peer) {
     this.code = code;
@@ -71,6 +75,9 @@ class Room {
       code: this.code,
       hostPeer: this.host.id,
       mapSize: this.mapSize,
+      mapType: this.mapType,
+      gameSpeed: this.gameSpeed,
+      discovered: this.discovered,
       started: this.started,
       slots: this.slots.map((s) => ({
         name: s.name, isAI: s.isAI, aiLevel: s.aiLevel, color: s.color,
@@ -100,6 +107,9 @@ class Room {
     const setup: GameSetup = {
       seed: (hashString(this.code) ^ (Date.now() & 0x7fffffff)) >>> 0,
       mapSize: this.mapSize,
+      mapType: this.mapType,
+      gameSpeed: this.gameSpeed,
+      discovered: this.discovered,
       players: this.slots.map((s) => ({
         name: s.name, color: s.color, isAI: s.isAI, aiLevel: s.aiLevel,
       })),
@@ -108,7 +118,7 @@ class Room {
       const peer = this.slots[i].peer;
       if (peer) send(peer, { t: 'begin', setup, yourPlayer: i });
     }
-    this.timer = setInterval(() => this.emitFrame(), TICK_MS);
+    this.timer = setInterval(() => this.emitFrame(), TICK_MS / this.gameSpeed);
     log(`room ${this.code}: started (${this.slots.length} players, map ${this.mapSize}, seed ${setup.seed})`);
   }
 
@@ -122,7 +132,18 @@ class Room {
       }
     }
     const frame: Frame = { tick: this.tick++, commands };
+    this.frames.push(frame);
     this.broadcast({ t: 'frame', frame });
+  }
+
+  reconnect(peer: Peer, name: string, tick: number): boolean {
+    const index = this.slots.findIndex((slot) => !slot.isAI && !slot.peer && slot.name.toLowerCase() === name.toLowerCase());
+    if (index < 0) return false;
+    this.slots[index].peer = peer;
+    peer.room = this;
+    send(peer, { t: 'reconnected', player: index, frames: this.frames.filter((frame) => frame.tick >= tick) });
+    this.broadcast({ t: 'chat', from: 'System', text: `${this.slots[index].name} reconnected.` }, peer);
+    return true;
   }
 
   recordHash(player: number, tick: number, hash: number) {
@@ -227,6 +248,15 @@ function handleMessage(peer: Peer, msg: C2S) {
       r.syncLobby();
       break;
     }
+    case 'reconnect': {
+      if (room) return;
+      const code = String(msg.code ?? '').toUpperCase().trim();
+      const reconnectRoom = rooms.get(code);
+      if (!reconnectRoom?.started || !reconnectRoom.reconnect(peer, sanitizeName(msg.name), Number(msg.tick) | 0)) {
+        send(peer, { t: 'error', msg: 'Could not reconnect to that game.' });
+      }
+      break;
+    }
     case 'leave': {
       if (!room) return;
       room.removePeer(peer);
@@ -258,6 +288,27 @@ function handleMessage(peer: Peer, msg: C2S) {
       const size = Number(msg.mapSize) | 0;
       if (![64, 80, 96].includes(size)) return;
       room.mapSize = size;
+      room.syncLobby();
+      break;
+    }
+    case 'setMapType': {
+      if (!room || room.started || peer !== room.host) return;
+      if (!['arabia', 'arena', 'blackforest'].includes(msg.mapType)) return;
+      room.mapType = msg.mapType;
+      room.syncLobby();
+      break;
+    }
+    case 'setGameSpeed': {
+      if (!room || room.started || peer !== room.host) return;
+      const speed = Number(msg.gameSpeed) | 0;
+      if (![1, 2, 3, 4].includes(speed)) return;
+      room.gameSpeed = speed;
+      room.syncLobby();
+      break;
+    }
+    case 'setDiscovered': {
+      if (!room || room.started || peer !== room.host) return;
+      room.discovered = !!msg.discovered;
       room.syncLobby();
       break;
     }

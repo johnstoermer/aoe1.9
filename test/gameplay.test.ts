@@ -96,7 +96,7 @@ describe('gameplay flows', () => {
     const w = makeWorld();
     const villager = firstOwn(w, 0, (e) => e.kind === 'unit');
     // conjure an enemy militia next to it (test-only backdoor)
-    const militia = w.createUnit(1, 'militia', villager.x + fp(1), villager.y);
+    const militia = w.createUnit(1, 'barbarian', villager.x + fp(1), villager.y);
     w.applyCommand(1, { t: 'attack', units: [militia.id], target: villager.id });
     tickN(w, 300);
     expect(w.entities.has(villager.id)).toBe(false);
@@ -110,7 +110,7 @@ describe('gameplay flows', () => {
     const tc0 = firstOwn(w, 0, (e) => e.type === 'towncenter');
     const troops: number[] = [];
     for (let i = 0; i < 8; i++) {
-      const u = w.createUnit(1, 'champion', tc0.x + fp(2 + (i % 3)), tc0.y + fp(i % 2 ? 2 : -2));
+      const u = w.createUnit(1, 'vanguard', tc0.x + fp(2 + (i % 3)), tc0.y + fp(i % 2 ? 2 : -2));
       troops.push(u.id);
     }
     w.applyCommand(1, { t: 'attackmove', units: troops, x: tc0.x, y: tc0.y });
@@ -140,7 +140,7 @@ describe('gameplay flows', () => {
     // a knot of enemy militia standing east of the TC
     const clump: Entity[] = [];
     for (let i = 0; i < 4; i++) {
-      clump.push(w.createUnit(1, 'militia', tc0.x + fp(6), tc0.y + fp(i * 0.4 - 0.6)));
+      clump.push(w.createUnit(1, 'barbarian', tc0.x + fp(6), tc0.y + fp(i * 0.4 - 0.6)));
     }
     const cat = w.createUnit(0, 'catapult', tc0.x + fp(1), tc0.y);
     w.applyCommand(0, { t: 'attack', units: [cat.id], target: clump[0].id });
@@ -163,7 +163,7 @@ describe('gameplay flows', () => {
     const tc0 = firstOwn(w, 0, (e) => e.type === 'towncenter');
     const tx = (tc0.x >> FP_BITS) + 5, ty = (tc0.y >> FP_BITS) + 5;
     const tower = w.createBuilding(0, 'watchtower', tx, ty, true);
-    const target = w.createUnit(1, 'militia', (tx << FP_BITS) + fp(3), (ty << FP_BITS));
+    const target = w.createUnit(1, 'barbarian', (tx << FP_BITS) + fp(3), (ty << FP_BITS));
     const hp0 = target.hp;
     let arrowSeen = false;
     for (let i = 0; i < 200; i++) {

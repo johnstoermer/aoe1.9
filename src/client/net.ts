@@ -27,6 +27,10 @@ export class NetClient implements Transport {
   private frameQueue: Frame[] = [];
   private lastFrameArrival = performance.now();
   private latestTick = -1;
+  private playerName = 'Player';
+  private roomCode = '';
+  private inGame = false;
+  private reconnecting = false;
   connected = false;
 
   connect(): Promise<void> {
@@ -45,7 +49,8 @@ export class NetClient implements Transport {
       };
       ws.onclose = () => {
         this.connected = false;
-        this.handler.onClose?.();
+        if (this.inGame && this.roomCode && !this.reconnecting) void this.reconnect();
+        else if (!this.reconnecting) this.handler.onClose?.();
       };
       ws.onmessage = (e) => {
         let msg: S2C;
@@ -66,6 +71,7 @@ export class NetClient implements Transport {
         break;
       case 'room':
         this.room = msg.room;
+        this.roomCode = msg.room.code;
         this.yourSlot = msg.yourSlot;
         this.handler.onRoom?.(msg.room, msg.yourSlot);
         break;
@@ -76,7 +82,14 @@ export class NetClient implements Transport {
       case 'begin':
         this.frameQueue = [];
         this.latestTick = -1;
+        this.inGame = true;
         this.handler.onBegin?.(msg.setup, msg.yourPlayer);
+        break;
+      case 'reconnected':
+        this.frameQueue.push(...msg.frames);
+        if (msg.frames.length) this.latestTick = msg.frames[msg.frames.length - 1].tick;
+        this.lastFrameArrival = performance.now();
+        this.reconnecting = false;
         break;
       case 'frame':
         this.frameQueue.push(msg.frame);
@@ -115,7 +128,23 @@ export class NetClient implements Transport {
   }
 
   hello(name: string) {
+    this.playerName = name;
     this.send({ t: 'hello', name, version: PROTOCOL_VERSION });
+  }
+
+  private async reconnect() {
+    this.reconnecting = true;
+    for (let attempt = 0; attempt < 12; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, Math.min(5000, 500 + attempt * 400)));
+      try {
+        await this.connect();
+        this.hello(this.playerName);
+        this.send({ t: 'reconnect', code: this.roomCode, name: this.playerName, tick: this.latestTick + 1 });
+        return;
+      } catch {}
+    }
+    this.reconnecting = false;
+    this.handler.onClose?.();
   }
 
   // --- Transport ---------------------------------------------------------------
@@ -145,9 +174,11 @@ export class NetClient implements Transport {
   stop() {
     // leave the room but keep the socket for the post-game lobby
     this.send({ t: 'leave' });
+    this.inGame = false;
   }
 
   close() {
+    this.inGame = false;
     this.ws?.close();
     this.ws = null;
   }

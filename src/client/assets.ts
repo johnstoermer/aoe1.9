@@ -272,10 +272,20 @@ export const particleTextures = {
 };
 
 /** 4-variant terrain atlas: grass, light grass, dirt, dark grass. */
-export function makeTerrainAtlas(): THREE.CanvasTexture {
+export function makeTerrainAtlas(theme: 'arabia' | 'arena' | 'blackforest' = 'arena'): THREE.CanvasTexture {
   const T = 32;
   return canvasTexture(T * 4, (ctx) => {
-    const bases: [string, string[]][] = [
+    const bases: [string, string[]][] = theme === 'arabia' ? [
+      ['#b6985a', ['#c2a564', '#a98a50', '#ceb174', '#927746']],
+      ['#c4aa68', ['#d1b776', '#b69a5b', '#dcc58a', '#a58a50']],
+      ['#aa844a', ['#ba9252', '#98723e', '#c39d61', '#806035']],
+      ['#8f743f', ['#9e8248', '#7d6336', '#ac9155', '#70582f']],
+    ] : theme === 'blackforest' ? [
+      ['#d4dde0', ['#e4ecee', '#bcc8cc', '#f1f4f5', '#aab8bc']],
+      ['#edf1f2', ['#ffffff', '#d7dfe1', '#e5ebed', '#c6d0d3']],
+      ['#aeb8b8', ['#bbc5c5', '#939f9f', '#cbd2d2', '#7f8d8d']],
+      ['#65766f', ['#72847c', '#53645d', '#81928a', '#465850']],
+    ] : [
       ['#4d7c3a', ['#568a41', '#477436', '#5d9347', '#43682f']],
       ['#5d8f46', ['#68a04f', '#548140', '#74a85b', '#4d7a3a']],
       ['#8a6f47', ['#96794e', '#7d6440', '#a08355', '#71583a']],

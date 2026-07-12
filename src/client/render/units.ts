@@ -97,6 +97,12 @@ export class UnitView {
     if (!v.rig) centerOnGround(obj);
     if (v.rig) applyTeamColor(obj, ent.type, ent.owner);
     this.group.add(obj);
+    if (v.weapon) void loadModel(v.weapon).then((weaponModel) => {
+      const hand = obj.getObjectByName('handslot.r') ?? obj.getObjectByName('hand.r');
+      if (!hand) return;
+      const weapon = instantiate(weaponModel, false);
+      hand.add(weapon);
+    });
 
     const r = toTiles(UNITS[ent.type as keyof typeof UNITS].radius);
     this.group.add(makeBlobShadow(r * 1.5));

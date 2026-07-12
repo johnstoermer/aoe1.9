@@ -47,7 +47,7 @@ export class Terrain {
     geo.setIndex(new THREE.BufferAttribute(idx, 1));
     geo.computeVertexNormals();
 
-    const atlas = makeTerrainAtlas();
+    const atlas = makeTerrainAtlas(map.type);
     atlas.colorSpace = THREE.SRGBColorSpace;
     const mat = new THREE.MeshLambertMaterial({ map: atlas });
     ps1ify(mat);
@@ -84,6 +84,7 @@ export class PlacementGhost {
   private plate: THREE.Mesh;
   private plateMat: THREE.MeshBasicMaterial;
   private preview: THREE.Object3D | null = null;
+  private linePlates: THREE.Mesh[] = [];
 
   constructor() {
     this.plateMat = new THREE.MeshBasicMaterial({
@@ -114,11 +115,36 @@ export class PlacementGhost {
   }
 
   show(tx: number, ty: number, w: number, h: number, ok: boolean) {
+    this.clearLine();
     this.group.visible = true;
     this.group.position.set(tx + w / 2, 0, ty + h / 2);
     this.plate.scale.set(w, h, 1);
     this.plateMat.color.setHex(ok ? 0x30d040 : 0xd03030);
     if (this.preview) this.preview.position.set(0, 0, 0);
+  }
+
+  showLine(tiles: { x: number; y: number }[], valid: (x: number, y: number) => boolean) {
+    this.group.visible = true;
+    this.group.position.set(0, 0, 0);
+    this.plate.visible = false;
+    if (this.preview) this.preview.visible = false;
+    this.clearLine();
+    for (const tile of tiles) {
+      const material = this.plateMat.clone();
+      material.color.setHex(valid(tile.x, tile.y) ? 0x30d040 : 0xd03030);
+      const plate = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
+      plate.rotation.x = -Math.PI / 2;
+      plate.position.set(tile.x + 0.5 - this.group.position.x, 0.06, tile.y + 0.5 - this.group.position.z);
+      this.group.add(plate);
+      this.linePlates.push(plate);
+    }
+  }
+
+  private clearLine() {
+    for (const plate of this.linePlates) this.group.remove(plate);
+    this.linePlates.length = 0;
+    this.plate.visible = true;
+    if (this.preview) this.preview.visible = true;
   }
 
   hide() {

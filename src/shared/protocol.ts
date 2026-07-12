@@ -5,7 +5,7 @@
 // tick rate, and every client (plus the in-sim AI) executes the identical
 // frame stream. Desyncs are detected by comparing periodic state hashes.
 
-import type { Command, Frame, GameSetup } from './types';
+import type { Command, Frame, GameSetup, MapTypeId } from './types';
 
 export const PROTOCOL_VERSION = 1;
 export const DEFAULT_PORT = 8080;
@@ -25,6 +25,9 @@ export interface RoomInfo {
   code: string;
   hostPeer: number;
   mapSize: number;
+  mapType: MapTypeId;
+  gameSpeed: number;
+  discovered: boolean;
   slots: LobbySlot[];
   started: boolean;
 }
@@ -33,10 +36,14 @@ export type C2S =
   | { t: 'hello'; name: string; version: number }
   | { t: 'create' }
   | { t: 'join'; code: string }
+  | { t: 'reconnect'; code: string; name: string; tick: number }
   | { t: 'leave' }
   | { t: 'setName'; name: string }
   | { t: 'setColor'; color: number }
   | { t: 'setMapSize'; mapSize: number }        // host only
+  | { t: 'setMapType'; mapType: MapTypeId }     // host only
+  | { t: 'setGameSpeed'; gameSpeed: number }    // host only
+  | { t: 'setDiscovered'; discovered: boolean } // host only
   | { t: 'addAI'; level: number }               // host only
   | { t: 'removeSlot'; index: number }          // host only
   | { t: 'ready'; ready: boolean }
@@ -54,6 +61,7 @@ export type S2C =
   | { t: 'begin'; setup: GameSetup; yourPlayer: number }
   | { t: 'frame'; frame: Frame }
   | { t: 'frames'; frames: Frame[] }            // catch-up batch
+  | { t: 'reconnected'; player: number; frames: Frame[] }
   | { t: 'chat'; from: string; text: string }
   | { t: 'desync'; tick: number }
   | { t: 'peerLeft'; player: number; name: string }
@@ -64,3 +72,11 @@ export const MAP_SIZES = [
   { name: 'Medium', tiles: 80 },
   { name: 'Large', tiles: 96 },
 ];
+
+export const MAP_TYPES: { id: MapTypeId; name: string; description: string }[] = [
+  { id: 'arabia', name: 'Arabia', description: 'Dry open ground, scattered forests and fast aggression.' },
+  { id: 'arena', name: 'Arena', description: 'Green bases enclosed by stone walls for safer booming.' },
+  { id: 'blackforest', name: 'Black Forest', description: 'Snowy dense pine forests and narrow chokepoints.' },
+];
+
+export const GAME_SPEEDS = [1, 2, 3, 4];

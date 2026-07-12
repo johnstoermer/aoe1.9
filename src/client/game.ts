@@ -68,6 +68,7 @@ export class GameClient {
   // placement mode
   placing: BuildingTypeId | null = null;
   private ghostTile = { x: 0, y: 0 };
+  private wallStart: { x: number; y: number } | null = null;
   attackMoveMode = false;
 
   // camera control state (fed by input controller)
@@ -401,8 +402,8 @@ export class GameClient {
               view.playOnce(clip, dur);
             }
             if (visible) {
-              const kind = e.type === 'champion' || e.type === 'catapult' ? 'swingHeavy' : 'swingLight';
-              if (e.type !== 'archer') audio.play(kind, x, y);
+              const kind = e.type === 'bruiser' || e.type === 'vanguard' || e.type === 'catapult' ? 'swingHeavy' : 'swingLight';
+              if (e.type !== 'bowman' && e.type !== 'crossbowman') audio.play(kind, x, y);
             }
           }
           break;
@@ -701,14 +702,18 @@ export class GameClient {
     if (target && target.owner >= 0 && target.owner !== this.you && target.kind !== 'resource') {
       cmd = { t: 'attack', units: ids, target: target.id, queue };
       audio.play('click');
+    } else if (target && target.kind === 'building' && target.owner === this.you && !this.world.isBuildingComplete(target)) {
+      if (units.some((u) => u.type === 'villager')) {
+        cmd = { t: 'buildmore', units: ids.filter((id) => this.world.entities.get(id)?.type === 'villager'), target: target.id, queue };
+        audio.play('click');
+      }
+    } else if (target && target.kind === 'building' && target.owner === this.you && target.type === 'towncenter'
+      && units.some((u) => u.type === 'villager')) {
+      cmd = { t: 'garrison', units: ids.filter((id) => this.world.entities.get(id)?.type === 'villager'), building: target.id };
+      audio.play('click');
     } else if (target && (target.kind === 'resource' || (target.kind === 'building' && target.type === 'farm' && target.owner === this.you))) {
       if (units.some((u) => u.type === 'villager')) {
         cmd = { t: 'gather', units: ids.filter((id) => this.world.entities.get(id)?.type === 'villager'), target: target.id, queue };
-        audio.play('click');
-      }
-    } else if (target && target.kind === 'building' && target.owner === this.you && !this.world.isBuildingComplete(target)) {
-      if (units.some((u) => u.type === 'villager')) {
-        cmd = { t: 'buildmore', units: ids.filter((id) => this.world.entities.get(id)?.type === 'villager'), target: target.id };
         audio.play('click');
       }
     } else if (ground) {
@@ -754,6 +759,10 @@ export class GameClient {
     audio.play('click');
   }
 
+  issueUngarrison(buildingId: number) {
+    this.transport.sendCommands([{ t: 'ungarrison', building: buildingId }]);
+  }
+
   resign() {
     this.transport.sendCommands([{ t: 'resign' }]);
   }
@@ -763,6 +772,7 @@ export class GameClient {
   enterPlacement(type: BuildingTypeId) {
     if (!isBuildingType(type)) return;
     this.placing = type;
+    this.wallStart = null;
     const color = this.world.players[this.you].color;
     void loadModel(buildingModelPath(type, color)).then((m) => {
       if (this.placing !== type) return;
@@ -785,6 +795,7 @@ export class GameClient {
   cancelPlacement() {
     if (this.placing) audio.play('uiClose');
     this.placing = null;
+    this.wallStart = null;
     this.ghost.setPreview(null);
     this.ghost.hide();
   }
@@ -798,7 +809,11 @@ export class GameClient {
     this.ghostTile.y = Math.round(g.y - d.h / 2);
     const ok = this.world.canPlaceBuilding(this.you, this.placing, this.ghostTile.x, this.ghostTile.y)
       && this.world.canAfford(this.you, d.cost);
-    this.ghost.show(this.ghostTile.x, this.ghostTile.y, d.w, d.h, ok);
+    if ((this.placing === 'woodwall' || this.placing === 'stonewall') && this.wallStart) {
+      this.ghost.showLine(this.wallTiles(this.wallStart, this.ghostTile), (x, y) => this.world.canPlaceBuilding(this.you, this.placing!, x, y));
+    } else {
+      this.ghost.show(this.ghostTile.x, this.ghostTile.y, d.w, d.h, ok);
+    }
   }
 
   confirmPlacement(keepPlacing: boolean) {
@@ -807,6 +822,22 @@ export class GameClient {
     const villagers = this.selectedOwnUnits().filter((u) => u.type === 'villager');
     if (villagers.length === 0) { this.cancelPlacement(); return; }
     const d = BUILDINGS[type];
+    if (type === 'woodwall' || type === 'stonewall') {
+      if (!this.wallStart) {
+        if (!this.world.canPlaceBuilding(this.you, type, this.ghostTile.x, this.ghostTile.y)) return;
+        this.wallStart = { ...this.ghostTile };
+        return;
+      }
+      const tiles = this.wallTiles(this.wallStart, this.ghostTile)
+        .filter((tile) => this.world.canPlaceBuilding(this.you, type, tile.x, tile.y));
+      const affordable = Math.min(tiles.length, Math.floor((this.world.players[this.you].stock[type === 'woodwall' ? 'wood' : 'stone']) / 8));
+      this.transport.sendCommands(tiles.slice(0, affordable).map((tile, index) => ({
+        t: 'build', units: villagers.map((villager) => villager.id), building: type,
+        tx: tile.x, ty: tile.y, queue: index > 0,
+      })));
+      this.cancelPlacement();
+      return;
+    }
     if (!this.world.canPlaceBuilding(this.you, type, this.ghostTile.x, this.ghostTile.y)
       || !this.world.canAfford(this.you, d.cost)) {
       this.cb.onToast('Cannot place building there.', true);
@@ -814,10 +845,31 @@ export class GameClient {
     }
     this.transport.sendCommands([{
       t: 'build', units: villagers.map((v) => v.id), building: type,
-      tx: this.ghostTile.x, ty: this.ghostTile.y,
+      tx: this.ghostTile.x, ty: this.ghostTile.y, queue: keepPlacing,
     }]);
     audio.play('click');
     if (!keepPlacing) this.cancelPlacement();
+  }
+
+  private wallTiles(start: { x: number; y: number }, end: { x: number; y: number }) {
+    const tiles: { x: number; y: number }[] = [];
+    let x = start.x, y = start.y;
+    const dx = Math.abs(end.x - x), dy = Math.abs(end.y - y);
+    const sx = x < end.x ? 1 : -1, sy = y < end.y ? 1 : -1;
+    let error = dx - dy;
+    for (;;) {
+      tiles.push({ x, y });
+      if (x === end.x && y === end.y) break;
+      const twice = error * 2;
+      if (twice > -dy) { error -= dy; x += sx; }
+      if (twice < dx) { error += dx; y += sy; }
+    }
+    return tiles;
+  }
+
+  revealMap() {
+    this.world.visibility[this.you].fill(2);
+    this.terrain.updateFog(this.world.visibility[this.you]);
   }
 
   // --- camera helpers ----------------------------------------------------------
@@ -892,6 +944,11 @@ export class GameClient {
       if (e.kind === 'unit') {
         const view = this.unitViews.get(id);
         if (view) this.rings.add(view.group.position.x, view.group.position.z, toTiles(UNITS[e.type as UnitTypeId].radius) * 2.1, color);
+        const target = this.world.entities.get(e.engagedId || e.targetId);
+        if (target) {
+          const radius = target.kind === 'building' ? Math.max(this.world.footprint(target).w, this.world.footprint(target).h) * 0.55 : 0.48;
+          this.rings.add(toTiles(target.x), toTiles(target.y), radius, 0xffd040);
+        }
       } else if (e.kind === 'building') {
         const f = this.world.footprint(e);
         this.rings.add(f.x + f.w / 2, f.y + f.h / 2, Math.max(f.w, f.h) * 0.62, color);

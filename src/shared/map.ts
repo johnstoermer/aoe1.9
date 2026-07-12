@@ -4,7 +4,7 @@
 // ground connectivity between all town centers.
 
 import { Prng } from './prng';
-import type { ResourceNodeTypeId } from './types';
+import type { MapTypeId, ResourceNodeTypeId } from './types';
 
 export interface MapNode {
   type: ResourceNodeTypeId;
@@ -14,6 +14,7 @@ export interface MapNode {
 
 export interface GameMap {
   size: number;
+  type: MapTypeId;
   /** Player town-center top-left tiles, indexed by player. */
   spawns: { tx: number; ty: number }[];
   nodes: MapNode[];
@@ -34,7 +35,7 @@ export const dirCos = (k: number): number => SIN32[((k + 8) % 32 + 32) % 32];
 
 const TC_W = 3;
 
-export function generateMap(seed: number, size: number, playerCount: number): GameMap {
+export function generateMap(seed: number, size: number, playerCount: number, type: MapTypeId = 'arabia'): GameMap {
   const rng = new Prng(seed);
   const idx = (x: number, y: number) => y * size + x;
   const inBounds = (x: number, y: number) => x >= 0 && y >= 0 && x < size && y < size;
@@ -126,7 +127,7 @@ export function generateMap(seed: number, size: number, playerCount: number): Ga
   }
 
   // --- forests ---------------------------------------------------------------
-  const blobs = Math.floor((size * size) / 260);
+  const blobs = Math.floor((size * size) / (type === 'blackforest' ? 120 : type === 'arena' ? 220 : 390));
   for (let b = 0; b < blobs; b++) {
     const bx = rng.range(2, size - 3);
     const by = rng.range(2, size - 3);
@@ -137,7 +138,7 @@ export function generateMap(seed: number, size: number, playerCount: number): Ga
       if (dx * dx + dy * dy < 36) { nearSpawn = true; break; }
     }
     if (nearSpawn) continue;
-    const r = rng.range(1, 3);
+    const r = rng.range(type === 'blackforest' ? 2 : 1, type === 'blackforest' ? 4 : 3);
     for (let j = -r; j <= r; j++) {
       for (let i = -r; i <= r; i++) {
         if (i * i + j * j > r * r + rng.int(2)) continue;
@@ -145,11 +146,14 @@ export function generateMap(seed: number, size: number, playerCount: number): Ga
       }
     }
   }
-  // enclosing forest ring, Black-Forest style
+  // enclosing forest ring keeps maps bounded; Black Forest gets a much thicker edge.
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const edge = Math.min(x, y, size - 1 - x, size - 1 - y);
-      if (edge === 0 || (edge === 1 && rng.int(10) < 8) || (edge === 2 && rng.int(10) < 4)) {
+      const ring = type === 'blackforest'
+        ? edge < 4 || (edge === 4 && rng.int(10) < 7)
+        : edge === 0 || (edge === 1 && rng.int(10) < 6);
+      if (ring) {
         addNode('tree', x, y);
       }
     }
@@ -158,7 +162,11 @@ export function generateMap(seed: number, size: number, playerCount: number): Ga
   // --- visual terrain variation ---------------------------------------------
   for (let i = 0; i < terrain.length; i++) {
     const r = rng.int(100);
-    terrain[i] = r < 62 ? 0 : r < 82 ? 1 : r < 90 ? 2 : 3;
+    terrain[i] = type === 'arabia'
+      ? (r < 68 ? 2 : r < 88 ? 1 : 0)
+      : type === 'blackforest'
+        ? (r < 72 ? 0 : r < 92 ? 1 : 3)
+        : (r < 68 ? 0 : r < 88 ? 1 : r < 94 ? 2 : 3);
   }
   // dirt plazas under town centers
   for (const s of spawns) {
@@ -171,7 +179,7 @@ export function generateMap(seed: number, size: number, playerCount: number): Ga
   }
 
   carveConnectivity(size, occ, nodes, spawns);
-  return { size, spawns, nodes, terrain };
+  return { size, type, spawns, nodes, terrain };
 }
 
 /**

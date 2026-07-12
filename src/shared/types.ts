@@ -10,11 +10,14 @@ export const POP_CAP = 75;
 export type Resource = 'food' | 'wood' | 'gold' | 'stone';
 export const RESOURCES: Resource[] = ['food', 'wood', 'gold', 'stone'];
 
-export type UnitTypeId = 'villager' | 'militia' | 'archer' | 'champion' | 'catapult';
+export type UnitTypeId =
+  | 'villager' | 'barbarian' | 'knight' | 'bowman' | 'crossbowman'
+  | 'bruiser' | 'vanguard' | 'catapult';
 export type BuildingTypeId =
   | 'towncenter' | 'house' | 'farm' | 'lumbercamp' | 'minecamp'
   | 'barracks' | 'archeryrange' | 'workshop' | 'blacksmith'
-  | 'watchtower' | 'castle';
+  | 'watchtower' | 'castle' | 'woodwall' | 'stonewall';
+export type MapTypeId = 'arabia' | 'arena' | 'blackforest';
 export type ResourceNodeTypeId = 'tree' | 'berries' | 'gold' | 'stone';
 export type TechId =
   | 'age2' | 'age3'
@@ -78,6 +81,9 @@ export interface Entity {
   srcY: number;
   splash: number;          // fixed-point splash radius (0 = single target)
   dmg: number;
+  garrisonedIn: number;
+  garrisonedIds: number[];
+  lastCombatTick: number;
 }
 
 export interface QueuedOrder {
@@ -126,14 +132,16 @@ export type Command =
   | { t: 'attackmove'; units: number[]; x: number; y: number; queue?: boolean }
   | { t: 'attack'; units: number[]; target: number; queue?: boolean }
   | { t: 'gather'; units: number[]; target: number; queue?: boolean }
-  | { t: 'build'; units: number[]; building: BuildingTypeId; tx: number; ty: number }
-  | { t: 'buildmore'; units: number[]; target: number } // help an existing foundation
+  | { t: 'build'; units: number[]; building: BuildingTypeId; tx: number; ty: number; queue?: boolean }
+  | { t: 'buildmore'; units: number[]; target: number; queue?: boolean } // help an existing foundation
   | { t: 'train'; building: number; unit: UnitTypeId }
   | { t: 'research'; building: number; tech: TechId }
   | { t: 'cancelqueue'; building: number; index: number }
   | { t: 'rally'; building: number; x: number; y: number; target?: number }
   | { t: 'stop'; units: number[] }
   | { t: 'delete'; id: number }
+  | { t: 'garrison'; units: number[]; building: number }
+  | { t: 'ungarrison'; building: number }
   | { t: 'resign' };
 
 /** One sim tick's worth of ordered player commands, as sequenced by the server. */
@@ -168,5 +176,8 @@ export interface SimEvent {
 export interface GameSetup {
   seed: number;
   mapSize: number; // tiles per side
+  mapType?: MapTypeId;
+  gameSpeed?: number;
+  discovered?: boolean;
   players: { name: string; color: number; isAI: boolean; aiLevel: number }[];
 }

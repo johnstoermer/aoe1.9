@@ -317,14 +317,17 @@ function trainMilitary(
   };
   for (const b of completed('barracks')) {
     if (b.trainQueue.length >= 2) continue;
-    const unit: UnitTypeId = p.age >= 2 && world.prng.int(2) === 0 ? 'champion' : 'militia';
+    const unit: UnitTypeId = p.age >= 2
+      ? (world.prng.int(2) === 0 ? 'knight' : 'vanguard')
+      : (p.age >= 1 && world.prng.int(3) === 0 ? 'bruiser' : 'barbarian');
     if (UNITS[unit].age <= p.age && buffered(unit)) {
       world.applyCommand(pid, { t: 'train', building: b.id, unit });
     }
   }
   for (const b of completed('archeryrange')) {
     if (b.trainQueue.length >= 2) continue;
-    if (buffered('archer')) world.applyCommand(pid, { t: 'train', building: b.id, unit: 'archer' });
+    const ranged: UnitTypeId = p.age >= 2 ? 'crossbowman' : 'bowman';
+    if (buffered(ranged)) world.applyCommand(pid, { t: 'train', building: b.id, unit: ranged });
   }
   for (const b of completed('workshop')) {
     if (b.trainQueue.length >= 1) continue;

@@ -33,6 +33,10 @@ export interface UnitData {
   hotkey: string;
   splash?: number;       // fp splash radius (boulder)
   minRange?: number;     // fp
+  role?: 'infantry' | 'archer' | 'brute' | 'siege';
+  buildingBonus?: number;
+  siegeBonus?: number;
+  regenerates?: boolean;
 }
 
 export const UNITS: Record<UnitTypeId, UnitData> = {
@@ -42,29 +46,47 @@ export const UNITS: Record<UnitTypeId, UnitData> = {
     swingTime: secs(0.45), armor: 0, speed: speed(0.95), radius: fp(0.26), sight: 5,
     age: 0, building: 'towncenter', hotkey: 'v',
   },
-  militia: {
-    name: 'Man-at-Arms', cost: { food: 60, gold: 20 }, trainTime: secs(15),
+  barbarian: {
+    name: 'Barbarian', cost: { food: 60, gold: 20 }, trainTime: secs(15),
     hp: 45, attack: 5, attackKind: 'melee', attackRange: fp(0.25), attackCd: secs(1.8),
     swingTime: secs(0.4), armor: 1, speed: speed(1.0), radius: fp(0.28), sight: 5,
-    age: 0, building: 'barracks', hotkey: 'm',
+    age: 0, building: 'barracks', hotkey: 'b', role: 'infantry',
   },
-  archer: {
-    name: 'Archer', cost: { wood: 25, gold: 45 }, trainTime: secs(20),
+  knight: {
+    name: 'Knight', cost: { food: 75, gold: 45 }, trainTime: secs(20),
+    hp: 70, attack: 9, attackKind: 'melee', attackRange: fp(0.25), attackCd: secs(1.7),
+    swingTime: secs(0.4), armor: 3, speed: speed(1.05), radius: fp(0.29), sight: 6,
+    age: 2, building: 'barracks', hotkey: 'k', role: 'infantry',
+  },
+  bowman: {
+    name: 'Bowman', cost: { wood: 25, gold: 45 }, trainTime: secs(20),
     hp: 30, attack: 4, attackKind: 'arrow', attackRange: fp(4.5), attackCd: secs(2.0),
     swingTime: secs(0.5), armor: 0, speed: speed(1.0), radius: fp(0.26), sight: 7,
-    age: 1, building: 'archeryrange', hotkey: 'a',
+    age: 1, building: 'archeryrange', hotkey: 'b', role: 'archer',
   },
-  champion: {
-    name: 'Champion', cost: { food: 60, gold: 45 }, trainTime: secs(20),
-    hp: 80, attack: 10, attackKind: 'melee', attackRange: fp(0.25), attackCd: secs(2.0),
-    swingTime: secs(0.45), armor: 2, speed: speed(0.95), radius: fp(0.3), sight: 5,
-    age: 2, building: 'barracks', hotkey: 'c',
+  crossbowman: {
+    name: 'Crossbowman', cost: { wood: 40, gold: 65 }, trainTime: secs(24),
+    hp: 34, attack: 7, attackKind: 'arrow', attackRange: fp(5.5), attackCd: secs(2.3),
+    swingTime: secs(0.45), armor: 0, speed: speed(0.92), radius: fp(0.26), sight: 8,
+    age: 2, building: 'archeryrange', hotkey: 'c', role: 'archer', buildingBonus: 3,
+  },
+  bruiser: {
+    name: 'Bruiser', cost: { food: 80, gold: 35 }, trainTime: secs(23),
+    hp: 105, attack: 11, attackKind: 'melee', attackRange: fp(0.3), attackCd: secs(2.4),
+    swingTime: secs(0.5), armor: 2, speed: speed(0.78), radius: fp(0.38), sight: 5,
+    age: 1, building: 'barracks', hotkey: 'u', role: 'brute', buildingBonus: 8, siegeBonus: 12,
+  },
+  vanguard: {
+    name: 'Vanguard', cost: { food: 110, gold: 70 }, trainTime: secs(30),
+    hp: 165, attack: 16, attackKind: 'melee', attackRange: fp(0.35), attackCd: secs(2.2),
+    swingTime: secs(0.5), armor: 4, speed: speed(0.8), radius: fp(0.42), sight: 6,
+    age: 2, building: 'barracks', hotkey: 'v', role: 'brute', buildingBonus: 14, siegeBonus: 18, regenerates: true,
   },
   catapult: {
     name: 'Catapult', cost: { wood: 160, gold: 135 }, trainTime: secs(30),
     hp: 60, attack: 35, attackKind: 'boulder', attackRange: fp(7), attackCd: secs(5),
     swingTime: secs(0.8), armor: 0, speed: speed(0.6), radius: fp(0.42), sight: 8,
-    age: 2, building: 'workshop', hotkey: 't', splash: fp(1.1), minRange: fp(1.5),
+    age: 2, building: 'workshop', hotkey: 't', splash: fp(1.1), minRange: fp(1.5), role: 'siege',
   },
 };
 
@@ -134,6 +156,14 @@ export const BUILDINGS: Record<BuildingTypeId, BuildingData> = {
     name: 'Castle', cost: { stone: 650 }, buildTime: secs(150),
     hp: 3500, w: 4, h: 4, sight: 10, age: 2,
     attack: 11, attackRange: fp(7.5), attackCd: secs(1.7), hotkey: 'x',
+  },
+  woodwall: {
+    name: 'Wooden Wall', cost: { wood: 8 }, buildTime: secs(4),
+    hp: 260, w: 1, h: 1, sight: 1, age: 0, hotkey: 'z',
+  },
+  stonewall: {
+    name: 'Stone Wall', cost: { stone: 8 }, buildTime: secs(6),
+    hp: 900, w: 1, h: 1, sight: 1, age: 2, hotkey: 'z',
   },
 };
 

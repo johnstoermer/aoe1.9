@@ -2,12 +2,14 @@
 // selection panel window, pause/settings dialogs, chat, and the game-over
 // screen with the classic score table.
 
+import * as THREE from 'three';
+
 import { AGE_NAMES, BUILDINGS, PLAYER_COLORS, TECHS, UNITS } from '../../shared/data';
 import { FP_BITS, toTiles } from '../../shared/fixed';
 import type { BuildingTypeId, Entity, TechId, UnitTypeId } from '../../shared/types';
 import { POP_CAP } from '../../shared/types';
 import { audio } from '../audio';
-import { drawResourceIcon, glyphIcon, renderModelIcon } from '../assets';
+import { drawResourceIcon, getClip, glyphIcon, renderModelIcon } from '../assets';
 import type { GameClient } from '../game';
 import { loadModel, instantiate } from '../assets';
 import { buildingModelPath } from '../render/buildings';
@@ -25,6 +27,7 @@ export class Hud {
   private resSpans = new Map<string, HTMLSpanElement>();
   private ageSpan!: HTMLSpanElement;
   private idleBtn!: HTMLButtonElement;
+  private allocationSpan!: HTMLSpanElement;
   private cmdGrid!: HTMLDivElement;
   private selInfo!: HTMLDivElement;
   private minimap!: HTMLCanvasElement;
@@ -84,6 +87,8 @@ export class Hud {
     }
     this.ageSpan = el('span', { class: 'age-label', text: AGE_NAMES[0] });
     this.resBar.appendChild(this.ageSpan);
+    this.allocationSpan = el('span', { class: 'allocation-label', text: '' }) as HTMLSpanElement;
+    this.resBar.appendChild(this.allocationSpan);
     this.resBar.appendChild(el('div', { class: 'spacer' }));
 
     this.idleBtn = el('button', { text: 'Idle: 0' }) as HTMLButtonElement;
@@ -107,6 +112,20 @@ export class Hud {
     pop.textContent = `${p.pop}/${p.popCap}`;
     pop.className = p.pop >= p.popCap && p.popCap < POP_CAP ? 'low' : '';
     this.ageSpan.textContent = AGE_NAMES[p.age];
+    const allocated = { food: 0, wood: 0, gold: 0, stone: 0, building: 0 };
+    for (const entity of this.game.world.entities.values()) {
+      if (entity.kind !== 'unit' || entity.type !== 'villager' || entity.owner !== this.game.you || entity.garrisonedIn) continue;
+      if (entity.order === 'build') { allocated.building++; continue; }
+      if (entity.order !== 'gather') continue;
+      const target = this.game.world.entities.get(entity.targetId);
+      if (!target) continue;
+      if (target.kind === 'building' && target.type === 'farm') allocated.food++;
+      else if (target.kind === 'resource') {
+        const resource = target.type === 'tree' ? 'wood' : target.type === 'berries' ? 'food' : target.type;
+        if (resource in allocated) allocated[resource as 'food' | 'wood' | 'gold' | 'stone']++;
+      }
+    }
+    this.allocationSpan.textContent = `Villagers: F ${allocated.food} · W ${allocated.wood} · G ${allocated.gold} · S ${allocated.stone} · Build ${allocated.building}`;
     const idle = this.game.idleVillagerCount();
     this.idleBtn.textContent = `Idle: ${idle}`;
     (this.idleBtn.style as CSSStyleDeclaration).fontWeight = idle > 0 ? 'bold' : 'normal';
@@ -294,6 +313,7 @@ export class Hud {
       const url = renderModelIcon(key, () => {
         const o = instantiate(m, e.kind === 'unit');
         if (e.kind === 'unit') applyTeamColor(o, e.type, color);
+        if (e.kind === 'unit') this.posePortrait(o);
         fitTo(o, 1, e.kind === 'unit');
         return o;
       });
@@ -392,7 +412,10 @@ export class Hud {
       btn.style.setProperty('--pct', `${Math.round(opts.progress * 100)}%`);
     }
     bindTooltip(btn, opts.tooltip);
-    btn.addEventListener('click', () => { if (!btn.disabled) opts.onClick(); });
+    btn.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      if (!btn.disabled) opts.onClick();
+    });
     if (opts.hotkey && !opts.disabled) this.hotkeyMap.set(opts.hotkey, opts.onClick);
     this.cmdGrid.appendChild(btn);
     return btn;
@@ -425,6 +448,7 @@ export class Hud {
       const url = renderModelIcon(key, () => {
         const o = instantiate(m, UNITS[type].building !== 'workshop');
         applyTeamColor(o, type, color);
+        if (UNITS[type].building !== 'workshop') this.posePortrait(o);
         fitTo(o, 1, true);
         return o;
       });
@@ -451,6 +475,14 @@ export class Hud {
     }
   }
 
+  private posePortrait(object: THREE.Object3D) {
+    const clip = getClip('Idle_B') ?? getClip('Idle_A');
+    if (!clip) return;
+    const animationMixer = new THREE.AnimationMixer(object);
+    animationMixer.clipAction(clip).play();
+    animationMixer.update(0.65);
+  }
+
   private buildMilitaryCommands() {
     this.cmdButton({
       icon: glyphIcon('⚔', '#a03030', '#fff'),
@@ -474,9 +506,19 @@ export class Hud {
     const p = world.players[this.game.you];
     if (!world.isBuildingComplete(b)) return;
 
+    if (b.type === 'towncenter' && b.garrisonedIds.length > 0) {
+      this.cmdButton({
+        icon: glyphIcon('↗', '#d4d0c8', '#202060'),
+        hotkey: 'g', count: b.garrisonedIds.length,
+        tooltip: () => `Ungarrison ${b.garrisonedIds.length} villager${b.garrisonedIds.length === 1 ? '' : 's'}`,
+        onClick: () => this.game.issueUngarrison(b.id),
+      });
+    }
+
     // trainable units
     for (const [id, d] of Object.entries(UNITS) as [UnitTypeId, typeof UNITS[UnitTypeId]][]) {
       if (d.building !== b.type) continue;
+      if (p.age >= 2 && (id === 'barbarian' || id === 'bowman' || id === 'bruiser')) continue;
       const locked = p.age < d.age;
       this.cmdButton({
         icon: this.unitIconFor(id),
@@ -633,12 +675,15 @@ export class Hud {
       body.appendChild(table);
       const row = el('div', { class: 'dialog-buttons' });
       const keep = el('button', { text: 'Keep Watching' });
-      keep.addEventListener('click', () => (document.querySelector('.modal-backdrop') as HTMLElement)?.remove());
+      keep.addEventListener('click', () => {
+        this.game.revealMap();
+        (document.querySelector('.modal-backdrop') as HTMLElement)?.remove();
+      });
       const quit = el('button', { text: 'Back to Menu' });
       quit.addEventListener('click', () => this.onQuit());
       row.append(keep, quit);
       body.appendChild(row);
-    }, { width: 480, closable: false });
+    }, { width: 650, closable: false });
   }
 
   showDesync() {

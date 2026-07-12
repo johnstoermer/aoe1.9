@@ -1,7 +1,8 @@
 // Front-end screens: Win98 desktop with taskbar, main menu, single-player
 // skirmish setup, and the multiplayer connect/lobby flow.
 
-import { MAP_SIZES, type RoomInfo } from '../../shared/protocol';
+import { GAME_SPEEDS, MAP_SIZES, MAP_TYPES, type RoomInfo } from '../../shared/protocol';
+import type { MapTypeId } from '../../shared/types';
 import { PLAYER_COLORS } from '../../shared/data';
 import { MAX_PLAYERS } from '../../shared/types';
 import { audio } from '../audio';
@@ -10,6 +11,9 @@ import { el, makeWindow, toast } from './widgets';
 export interface SkirmishConfig {
   playerName: string;
   mapSize: number;
+  mapType: MapTypeId;
+  gameSpeed: number;
+  discovered: boolean;
   aiCount: number;
   aiLevel: number;
   seed: string;
@@ -56,7 +60,6 @@ function timeString(): string {
 function titleBlock(): HTMLElement {
   return el('div', { class: 'title-block' },
     el('h1', { text: 'AOE 1.9' }),
-    el('div', { class: 'subtitle', text: 'Age of Empires-style RTS · deterministic lockstep · PS1 vibes · Win98 chrome' }),
   );
 }
 
@@ -68,7 +71,7 @@ export function showMainMenu(cb: {
   onAbout(): void;
 }): () => void {
   const s = screen();
-  const wrap = el('div');
+  const wrap = el('div', { class: 'main-menu-shell' });
   wrap.appendChild(titleBlock());
   const win = makeWindow('Main Menu', { width: 340, closable: false, className: 'menu-window' });
 
@@ -82,7 +85,6 @@ export function showMainMenu(cb: {
 
   wrap.appendChild(win.root);
   s.appendChild(wrap);
-  s.appendChild(taskbar('AOE 1.9'));
   return () => s.remove();
 }
 
@@ -131,6 +133,24 @@ export function showSkirmishSetup(cb: {
   mapSel.value = '80';
   mapRow.appendChild(mapSel);
 
+  const mapTypeRow = el('div', { class: 'field-row' });
+  mapTypeRow.appendChild(el('label', { text: 'Map' }));
+  const mapTypeSel = el('select') as HTMLSelectElement;
+  for (const map of MAP_TYPES) mapTypeSel.appendChild(el('option', { value: map.id, text: map.name, title: map.description }));
+  mapTypeRow.appendChild(mapTypeSel);
+
+  const speedRow = el('div', { class: 'field-row' });
+  speedRow.appendChild(el('label', { text: 'Game speed' }));
+  const speedSel = el('select') as HTMLSelectElement;
+  for (const speed of GAME_SPEEDS) speedSel.appendChild(el('option', { value: String(speed), text: `${speed}×` }));
+  speedSel.value = '3';
+  speedRow.appendChild(speedSel);
+
+  const discoveredRow = el('div', { class: 'field-row' });
+  const discovered = el('input', { type: 'checkbox' }) as HTMLInputElement;
+  discovered.checked = true;
+  discoveredRow.append(discovered, el('label', { text: 'Start with the full map discovered' }));
+
   const aiRow = el('div', { class: 'field-row' });
   aiRow.appendChild(el('label', { text: 'Opponents' }));
   const aiSel = el('select') as HTMLSelectElement;
@@ -157,6 +177,9 @@ export function showSkirmishSetup(cb: {
     cb.onStart({
       playerName: nameInput.value.trim() || 'Player',
       mapSize: Number(mapSel.value),
+      mapType: mapTypeSel.value as MapTypeId,
+      gameSpeed: Number(speedSel.value),
+      discovered: discovered.checked,
       aiCount: Number(aiSel.value),
       aiLevel: Number(lvlSel.value),
       seed: seedInput.value,
@@ -166,7 +189,7 @@ export function showSkirmishSetup(cb: {
   back.addEventListener('click', cb.onBack);
   buttons.append(start, back);
 
-  win.body.append(nameRow, mapRow, aiRow, lvlRow, seedRow, buttons);
+  win.body.append(nameRow, mapTypeRow, mapRow, speedRow, discoveredRow, aiRow, lvlRow, seedRow, buttons);
   s.appendChild(win.root);
   s.appendChild(taskbar('Skirmish Setup'));
   return () => s.remove();
@@ -224,6 +247,9 @@ export function showMultiplayerConnect(cb: {
 export interface LobbyActions {
   setColor(color: number): void;
   setMapSize(size: number): void;
+  setMapType(mapType: MapTypeId): void;
+  setGameSpeed(speed: number): void;
+  setDiscovered(discovered: boolean): void;
   addAI(level: number): void;
   removeSlot(index: number): void;
   setReady(ready: boolean): void;
@@ -239,6 +265,9 @@ export class LobbyScreen {
   private startBtn: HTMLButtonElement;
   private readyBtn: HTMLButtonElement;
   private mapSel: HTMLSelectElement;
+  private mapTypeSel: HTMLSelectElement;
+  private speedSel: HTMLSelectElement;
+  private discoveredCheck: HTMLInputElement;
   private codeSpan: HTMLElement;
   private actions: LobbyActions;
   private myPeer: number;
@@ -263,6 +292,22 @@ export class LobbyScreen {
     for (const m of MAP_SIZES) this.mapSel.appendChild(el('option', { value: String(m.tiles), text: `${m.name} (${m.tiles}×${m.tiles})` }));
     this.mapSel.addEventListener('change', () => this.actions.setMapSize(Number(this.mapSel.value)));
     mapRow.appendChild(this.mapSel);
+
+    mapRow.appendChild(el('label', { text: 'Map' }));
+    this.mapTypeSel = el('select') as HTMLSelectElement;
+    for (const map of MAP_TYPES) this.mapTypeSel.appendChild(el('option', { value: map.id, text: map.name }));
+    this.mapTypeSel.addEventListener('change', () => this.actions.setMapType(this.mapTypeSel.value as MapTypeId));
+    mapRow.appendChild(this.mapTypeSel);
+
+    mapRow.appendChild(el('label', { text: 'Speed' }));
+    this.speedSel = el('select') as HTMLSelectElement;
+    for (const speed of GAME_SPEEDS) this.speedSel.appendChild(el('option', { value: String(speed), text: `${speed}×` }));
+    this.speedSel.addEventListener('change', () => this.actions.setGameSpeed(Number(this.speedSel.value)));
+    mapRow.appendChild(this.speedSel);
+
+    this.discoveredCheck = el('input', { type: 'checkbox' }) as HTMLInputElement;
+    this.discoveredCheck.addEventListener('change', () => this.actions.setDiscovered(this.discoveredCheck.checked));
+    mapRow.append(this.discoveredCheck, el('label', { text: 'Discovered fog' }));
 
     const addAiBtn = el('button', { text: 'Add Computer' });
     addAiBtn.addEventListener('click', () => this.actions.addAI(1));
@@ -302,8 +347,14 @@ export class LobbyScreen {
   update(room: RoomInfo, yourSlot: number) {
     this.codeSpan.textContent = room.code;
     this.mapSel.value = String(room.mapSize);
+    this.mapTypeSel.value = room.mapType;
+    this.speedSel.value = String(room.gameSpeed);
+    this.discoveredCheck.checked = room.discovered;
     const isHost = room.hostPeer === this.myPeer;
     this.mapSel.disabled = !isHost;
+    this.mapTypeSel.disabled = !isHost;
+    this.speedSel.disabled = !isHost;
+    this.discoveredCheck.disabled = !isHost;
     this.startBtn.style.display = isHost ? '' : 'none';
     this.readyBtn.style.display = isHost ? 'none' : '';
 

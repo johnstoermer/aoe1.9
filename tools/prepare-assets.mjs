@@ -11,9 +11,10 @@
 
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const SRC = process.env.ASSETS_SRC ?? '/workspace/assets';
-const DST = resolve(dirname(new URL(import.meta.url).pathname), '..', 'public', 'assets');
+const DST = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'assets');
 
 if (!existsSync(SRC)) {
   console.error(`Asset source not found: ${SRC} (set ASSETS_SRC)`);
@@ -95,11 +96,20 @@ console.log('— Units & shared animation library —');
 copyGlb(`${ADV}/Characters/gltf/Knight.glb`, 'models/units');
 copyGlb(`${ADV}/Characters/gltf/Ranger.glb`, 'models/units');
 copyGlb(`${ADV}/Characters/gltf/Barbarian.glb`, 'models/units');
+copyGlb(`${ADV}/Characters/gltf/Barbarian_Large.glb`, 'models/units');
+copyGlb(`${ADV}/Characters/gltf/Rogue.glb`, 'models/units');
 copyGlb('KayKit Mystery Monthly Series 6/12 - June 2026 - Farmers/characters/Farmer_A.glb', 'models/units');
 copyGlb('KayKit Mystery Monthly Series 6/12 - June 2026 - Farmers/characters/Farmer_B.glb', 'models/units');
 copyGlb('KayKit Mystery Monthly Series 5/3 - September 2024 - Black Knight/characters/BlackKnight.glb', 'models/units');
 for (const a of ['General', 'MovementBasic', 'CombatMelee', 'CombatRanged', 'Tools']) {
   copyGlb(`${ANIM}/Rig_Medium_${a}.glb`, 'models/anims');
+}
+for (const weapon of ['sword_1handed', 'bow_withString', 'crossbow_2handed', 'axe_2handed_Large', 'hammer_A']) {
+  const root = weapon === 'hammer_A' ? 'KayKit Fantasy Weapons Bits 1.0/Assets/gltf' : `${ADV}/Assets/gltf`;
+  copyGltf(`${root}/${weapon}.gltf`, 'models/weapons');
+}
+for (const wall of ['fence_wood_straight', 'wall_straight']) {
+  copyGltf(`${HEX}/buildings/neutral/${wall}.gltf`, 'models/buildings/neutral');
 }
 for (const c of COLORS) {
   copyGltf(`${HEX}/units/${c}/catapult_${c}_full.gltf`, `models/props/${c}`);

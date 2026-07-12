@@ -22,31 +22,44 @@ export interface UnitVisual {
   /** Animation played per gather kind (villager only). */
   gather?: Record<string, string>;
   rig: boolean; // skinned character using the shared animation library
+  weapon?: string;
 }
 
 export const UNIT_VISUALS: Record<string, UnitVisual> = {
   villager: {
-    model: `${A}/units/Farmer_{ab}.glb`, height: 0.68, yaw: 0, rig: true,
+    model: `${A}/units/Farmer_{ab}.glb`, height: 0.68, yaw: 0, rig: true, weapon: `${A}/weapons/hammer_A.gltf`,
     anims: { idle: 'Idle_A', move: 'Walking_A', attack: ['Melee_Unarmed_Attack_Punch_A'], death: 'Death_A' },
     gather: {
       tree: 'Chop', gold: 'Pickaxe', stone: 'Pickaxe',
       berries: 'PickUp', farm: 'Work_A', build: 'Hammer', carry: 'Walking_A',
     },
   },
-  militia: {
-    model: `${A}/units/Knight.glb`, height: 0.74, yaw: 0, rig: true,
+  barbarian: {
+    model: `${A}/units/Barbarian.glb`, height: 0.74, yaw: 0, rig: true, weapon: `${A}/weapons/sword_1handed.gltf`,
     anims: {
       idle: 'Idle_B', move: 'Running_A',
       attack: ['Melee_1H_Attack_Slice_Horizontal', 'Melee_1H_Attack_Chop', 'Melee_1H_Attack_Stab'],
       death: 'Death_A',
     },
   },
-  archer: {
-    model: `${A}/units/Ranger.glb`, height: 0.72, yaw: 0, rig: true,
+  knight: {
+    model: `${A}/units/Knight.glb`, height: 0.76, yaw: 0, rig: true, weapon: `${A}/weapons/sword_1handed.gltf`,
+    anims: { idle: 'Melee_1H_Idle', move: 'Running_A', attack: ['Melee_1H_Attack_Slice_Horizontal'], death: 'Death_A' },
+  },
+  bowman: {
+    model: `${A}/units/Ranger.glb`, height: 0.72, yaw: 0, rig: true, weapon: `${A}/weapons/bow_withString.gltf`,
     anims: { idle: 'Idle_A', move: 'Running_A', attack: ['Ranged_Bow_Release'], death: 'Death_B' },
   },
-  champion: {
-    model: `${A}/units/BlackKnight.glb`, height: 0.8, yaw: 0, rig: true,
+  crossbowman: {
+    model: `${A}/units/Rogue.glb`, height: 0.72, yaw: 0, rig: true, weapon: `${A}/weapons/crossbow_2handed.gltf`,
+    anims: { idle: 'Ranged_2H_Idle', move: 'Running_A', attack: ['Ranged_Crossbow_Shoot'], death: 'Death_B' },
+  },
+  bruiser: {
+    model: `${A}/units/Barbarian_Large.glb`, height: 0.9, yaw: 0, rig: true, weapon: `${A}/weapons/axe_2handed_Large.gltf`,
+    anims: { idle: 'Melee_2H_Idle', move: 'Running_A', attack: ['Melee_2H_Attack_Chop'], death: 'Death_A' },
+  },
+  vanguard: {
+    model: `${A}/units/BlackKnight.glb`, height: 0.94, yaw: 0, rig: true, weapon: `${A}/weapons/axe_2handed_Large.gltf`,
     anims: {
       idle: 'Melee_2H_Idle', move: 'Running_A',
       attack: ['Melee_2H_Attack_Chop', 'Melee_2H_Attack_Slice', 'Melee_2H_Attack_Spin'],
@@ -78,6 +91,8 @@ export const BUILDING_VISUALS: Record<string, BuildingVisual> = {
   blacksmith: { model: `${A}/buildings/{c}/building_blacksmith_{c}.gltf`, fit: 0.95, yaw: 0 },
   watchtower: { model: `${A}/buildings/{c}/building_watchtower_{c}.gltf`, fit: 1.15, yaw: 0 },
   castle: { model: `${A}/buildings/{c}/building_castle_{c}.gltf`, fit: 1.05, yaw: 0 },
+  woodwall: { model: `${A}/buildings/neutral/fence_wood_straight.gltf`, fit: 1.0, yaw: 0 },
+  stonewall: { model: `${A}/buildings/neutral/wall_straight.gltf`, fit: 1.0, yaw: 0 },
 };
 
 export const CONSTRUCTION_MODELS = [
@@ -113,9 +128,12 @@ export const ANIM_LIBRARY = [
 /** Per-character team-color remap: which texture hues become the player color. */
 export const TEAM_REMAP: Record<string, { hueMin: number; hueMax: number; minSat: number } | null> = {
   villager: null, // farmers stay rustic; team ring carries the color
-  militia: { hueMin: 200, hueMax: 260, minSat: 0.25 },  // knight's blue cloth
-  archer: { hueMin: 70, hueMax: 160, minSat: 0.22 },    // ranger's green hood
-  champion: null,
+  barbarian: null,
+  knight: { hueMin: 200, hueMax: 260, minSat: 0.25 },
+  bowman: { hueMin: 70, hueMax: 160, minSat: 0.22 },
+  crossbowman: null,
+  bruiser: null,
+  vanguard: null,
   catapult: null, // already color-variant models
 };
 

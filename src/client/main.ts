@@ -114,6 +114,9 @@ function startSkirmish(cfg: SkirmishConfig) {
   const setup: GameSetup = {
     seed: seedNum || 1,
     mapSize: cfg.mapSize,
+    mapType: cfg.mapType,
+    gameSpeed: cfg.gameSpeed,
+    discovered: cfg.discovered,
     players: [
       { name: cfg.playerName, color: 0, isAI: false, aiLevel: 0 },
       ...Array.from({ length: cfg.aiCount }, (_, i) => ({
@@ -124,7 +127,9 @@ function startSkirmish(cfg: SkirmishConfig) {
       })),
     ],
   };
-  startGame({ setup, you: 0, transport: new LocalTransport(setup) });
+  const transport = new LocalTransport(setup);
+  transport.speed = setup.gameSpeed ?? 3;
+  startGame({ setup, you: 0, transport });
 }
 
 function showMultiplayerFlow() {
@@ -157,6 +162,9 @@ async function connectAnd(name: string, then: (net: NetClient) => void) {
       lobby = new LobbyScreen({
         setColor: (c) => net.send({ t: 'setColor', color: c }),
         setMapSize: (m) => net.send({ t: 'setMapSize', mapSize: m }),
+        setMapType: (mapType) => net.send({ t: 'setMapType', mapType }),
+        setGameSpeed: (gameSpeed) => net.send({ t: 'setGameSpeed', gameSpeed }),
+        setDiscovered: (discovered) => net.send({ t: 'setDiscovered', discovered }),
         addAI: (level) => net.send({ t: 'addAI', level }),
         removeSlot: (i) => net.send({ t: 'removeSlot', index: i }),
         setReady: (r) => net.send({ t: 'ready', ready: r }),

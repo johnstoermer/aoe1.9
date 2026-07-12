@@ -41,16 +41,25 @@ export const DEFAULT_EQUIPMENT_PLACEMENTS: Record<string, EquipmentPlacement> = 
   villager: structuredClone(IDENTITY_PLACEMENT),
   barbarian: structuredClone(IDENTITY_PLACEMENT),
   knight: structuredClone(IDENTITY_PLACEMENT),
-  bowman: structuredClone(IDENTITY_PLACEMENT),
+  bowman: { ...structuredClone(IDENTITY_PLACEMENT), hand: 'left' },
   crossbowman: structuredClone(IDENTITY_PLACEMENT),
   bruiser: structuredClone(IDENTITY_PLACEMENT),
   vanguard: structuredClone(IDENTITY_PLACEMENT),
 };
 
-const placementKey = (type: string) => `aoe19-equipment-${type}`;
+const placementKey = (type: string) => `aoe19-equipment-v2-${type}`;
+
+export function kayKitHandForEquipment(path: string): 'left' | 'right' {
+  const name = path.split('/').pop()?.toLowerCase() ?? '';
+  if (name.includes('shield') || (name.startsWith('bow.') || name.startsWith('bow_'))) return 'left';
+  return 'right';
+}
 
 export function getEquipmentPlacement(type: string): EquipmentPlacement {
-  const fallback = DEFAULT_EQUIPMENT_PLACEMENTS[type] ?? IDENTITY_PLACEMENT;
+  const fallback = DEFAULT_EQUIPMENT_PLACEMENTS[type] ?? {
+    ...IDENTITY_PLACEMENT,
+    hand: kayKitHandForEquipment(UNIT_VISUALS[type]?.weapon ?? ''),
+  };
   try {
     const saved = localStorage.getItem(placementKey(type));
     if (saved) return { ...structuredClone(fallback), ...JSON.parse(saved) } as EquipmentPlacement;

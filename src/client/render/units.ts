@@ -84,6 +84,17 @@ export function applyEquipmentPlacement(object: THREE.Object3D, placement: Equip
   object.scale.fromArray(placement.scale);
 }
 
+export function createEquipmentAdapter(weapon: THREE.Object3D, placement: EquipmentPlacement): THREE.Group {
+  const adapter = new THREE.Group();
+  adapter.name = 'equipment.adapter';
+  applyEquipmentPlacement(adapter, placement);
+  weapon.position.set(0, 0, 0);
+  weapon.rotation.set(0, 0, 0);
+  weapon.scale.set(1, 1, 1);
+  adapter.add(weapon);
+  return adapter;
+}
+
 export function modelPathFor(type: string, owner: number, entId: number): string {
   const v = UNIT_VISUALS[type];
   return v.model
@@ -127,8 +138,7 @@ export class UnitView {
       const hand = findHandSlot(obj, placement.hand);
       if (!hand) return;
       const weapon = instantiate(weaponModel, false);
-      applyEquipmentPlacement(weapon, placement);
-      hand.add(weapon);
+      hand.add(createEquipmentAdapter(weapon, placement));
     });
 
     const r = toTiles(UNITS[ent.type as keyof typeof UNITS].radius);

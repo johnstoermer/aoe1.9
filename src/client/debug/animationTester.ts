@@ -4,9 +4,9 @@ import type { UnitTypeId } from '../../shared/types';
 import {
   applyTeamColor, getAnimationClips, instantiate, loadAnimationLibrary, loadModel,
 } from '../assets';
-import { applyEquipmentPlacement, findHandSlot, modelPathFor, fitTo } from '../render/units';
+import { applyEquipmentPlacement, createEquipmentAdapter, findHandSlot, modelPathFor, fitTo } from '../render/units';
 import {
-  UNIT_VISUALS, getEquipmentPlacement, resetEquipmentPlacement, saveEquipmentPlacement,
+  UNIT_VISUALS, getEquipmentPlacement, kayKitHandForEquipment, resetEquipmentPlacement, saveEquipmentPlacement,
   type EquipmentPlacement,
 } from '../visuals';
 import { el, makeWindow } from '../ui/widgets';
@@ -127,12 +127,12 @@ export function showAnimationTester(onBack: () => void): () => void {
       return;
     }
     const weaponModel = await loadModel(path);
-    const equipment = instantiate(weaponModel, false);
-    equipment.userData.debugWeapon = true;
-    applyEquipmentPlacement(equipment, placement);
-    slot.add(equipment);
-    equipmentObject = equipment;
-    status.textContent = `${UNITS[type].name} (${UNIT_VISUALS[type].rigSize ?? 'medium'} rig): ${path.split('/').pop()} attached to ${slot.name}.`;
+    const weaponObject = instantiate(weaponModel, false);
+    const adapter = createEquipmentAdapter(weaponObject, placement);
+    adapter.userData.debugWeapon = true;
+    slot.add(adapter);
+    equipmentObject = adapter;
+    status.textContent = `${UNITS[type].name} (${UNIT_VISUALS[type].rigSize ?? 'medium'} rig): ${path.split('/').pop()} attached to ${slot.name} through equipment.adapter.`;
   };
 
   const playAnimation = () => {
@@ -177,7 +177,10 @@ export function showAnimationTester(onBack: () => void): () => void {
 
   character.select.addEventListener('change', () => void loadCharacter());
   animation.select.addEventListener('change', playAnimation);
-  weapon.select.addEventListener('change', () => { if (characterObject) void attachWeapon(character.select.value as UnitTypeId, characterObject, weapon.select.value); });
+  weapon.select.addEventListener('change', () => {
+    if (weapon.select.value !== 'auto') hand.select.value = kayKitHandForEquipment(weapon.select.value);
+    if (characterObject) void attachWeapon(character.select.value as UnitTypeId, characterObject, weapon.select.value);
+  });
   hand.select.addEventListener('change', () => { if (characterObject) void attachWeapon(character.select.value as UnitTypeId, characterObject, weapon.select.value); });
   for (const input of [...position.inputs, ...rotation.inputs, ...equipmentScale.inputs]) input.addEventListener('input', previewPlacement);
   savePlacement.addEventListener('click', () => {

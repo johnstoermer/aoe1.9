@@ -6,7 +6,7 @@ import type { MapTypeId } from '../../shared/types';
 import { PLAYER_COLORS } from '../../shared/data';
 import { MAX_PLAYERS } from '../../shared/types';
 import { audio } from '../audio';
-import { el, makeWindow, toast } from './widgets';
+import { el, makeWindow } from './widgets';
 
 export interface SkirmishConfig {
   playerName: string;
@@ -35,28 +35,6 @@ function screen(className = ''): HTMLDivElement {
   return s;
 }
 
-function taskbar(label: string): HTMLElement {
-  const bar = el('div', { class: 'taskbar' });
-  const start = el('button', { class: 'start-button', html: '<b>⊞ Start</b>' });
-  start.addEventListener('click', () => toast('It says Start, but the game starts over there →'));
-  const task = el('button', { class: 'task-item active', text: label });
-  const tray = el('div', { class: 'tray' });
-  const clock = el('span', { text: timeString() });
-  const timer = setInterval(() => {
-    if (!clock.isConnected) { clearInterval(timer); return; } // screen was torn down
-    clock.textContent = timeString();
-  }, 20000);
-  tray.append(el('span', { text: '🔊' }), clock);
-  bar.append(start, task, tray);
-  return bar;
-}
-
-function timeString(): string {
-  const d = new Date();
-  const h = d.getHours() % 12 || 12;
-  return `${h}:${String(d.getMinutes()).padStart(2, '0')} ${d.getHours() < 12 ? 'AM' : 'PM'}`;
-}
-
 function titleBlock(): HTMLElement {
   return el('div', { class: 'title-block' },
     el('h1', { text: 'AOE 1.9' }),
@@ -69,6 +47,8 @@ export function showMainMenu(cb: {
   onSinglePlayer(): void;
   onMultiplayer(): void;
   onAbout(): void;
+  onAnimationTester(): void;
+  onGodMode(): void;
 }): () => void {
   const s = screen();
   const wrap = el('div', { class: 'main-menu-shell' });
@@ -85,7 +65,29 @@ export function showMainMenu(cb: {
 
   wrap.appendChild(win.root);
   s.appendChild(wrap);
-  return () => s.remove();
+
+  const debugMenu = el('div', { class: 'debug-context-menu window' });
+  const animationTester = el('button', { text: 'Character Animation Tester' });
+  animationTester.addEventListener('click', cb.onAnimationTester);
+  const godMode = el('button', { text: 'Debug / Test / God Mode' });
+  godMode.addEventListener('click', cb.onGodMode);
+  debugMenu.append(animationTester, godMode);
+  s.appendChild(debugMenu);
+  const hideDebug = (event: PointerEvent) => {
+    if (!debugMenu.contains(event.target as Node)) debugMenu.style.display = 'none';
+  };
+  s.addEventListener('contextmenu', (event) => {
+    if (event.target !== s) return;
+    event.preventDefault();
+    debugMenu.style.left = `${Math.min(event.clientX, innerWidth - 230)}px`;
+    debugMenu.style.top = `${Math.min(event.clientY, innerHeight - 70)}px`;
+    debugMenu.style.display = 'flex';
+  });
+  window.addEventListener('pointerdown', hideDebug);
+  return () => {
+    window.removeEventListener('pointerdown', hideDebug);
+    s.remove();
+  };
 }
 
 export function showAbout(onBack: () => void): () => void {
@@ -108,7 +110,6 @@ export function showAbout(onBack: () => void): () => void {
   back.addEventListener('click', onBack);
   win.body.appendChild(el('div', { class: 'dialog-buttons' }, back));
   s.appendChild(win.root);
-  s.appendChild(taskbar('About AOE 1.9'));
   return () => s.remove();
 }
 
@@ -191,7 +192,6 @@ export function showSkirmishSetup(cb: {
 
   win.body.append(nameRow, mapTypeRow, mapRow, speedRow, discoveredRow, aiRow, lvlRow, seedRow, buttons);
   s.appendChild(win.root);
-  s.appendChild(taskbar('Skirmish Setup'));
   return () => s.remove();
 }
 
@@ -240,7 +240,6 @@ export function showMultiplayerConnect(cb: {
   win.body.appendChild(el('div', { class: 'dialog-buttons' }, back));
 
   s.appendChild(win.root);
-  s.appendChild(taskbar('Multiplayer'));
   return () => s.remove();
 }
 
@@ -341,7 +340,6 @@ export class LobbyScreen {
 
     win.body.append(codeRow, this.slotsBox, mapRow, this.chatBox, chatRow, buttons);
     this.s.appendChild(win.root);
-    this.s.appendChild(taskbar('Game Lobby'));
   }
 
   update(room: RoomInfo, yourSlot: number) {
@@ -399,7 +397,6 @@ export function showLoading(label: string): { setProgress(pct: number, text: str
   const bar = el('div', { class: 'loading-bar' }, el('div'));
   win.body.append(text, bar);
   s.appendChild(win.root);
-  s.appendChild(taskbar(label));
   return {
     setProgress(pct: number, t: string) {
       (bar.firstChild as HTMLElement).style.width = `${pct}%`;

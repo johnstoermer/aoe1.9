@@ -16,6 +16,7 @@ import {
 } from './ui/menus';
 import { Hud } from './ui/hud';
 import { toast } from './ui/widgets';
+import { showAnimationTester } from './debug/animationTester';
 
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
 const overlay = document.getElementById('overlay-canvas') as HTMLCanvasElement;
@@ -36,6 +37,7 @@ interface SessionOpts {
   you: number;
   transport: Transport;
   net?: NetClient; // present in multiplayer for chat/desync events
+  debug?: boolean;
 }
 
 function startGame(opts: SessionOpts) {
@@ -67,6 +69,7 @@ function startGame(opts: SessionOpts) {
   void game.start((pct, label) => loading.setProgress(pct, `Loading ${label}…`))
     .then(() => {
       loading.close();
+      if (opts.debug) game.enableGodMode();
       hud = new Hud(game);
       hud.onQuit = quitToMenu;
       input = new InputController(game, {
@@ -106,7 +109,25 @@ function showMenu() {
     })),
     onMultiplayer: showMultiplayerFlow,
     onAbout: () => switchScreen(() => showAbout(showMenu)),
+    onAnimationTester: () => switchScreen(() => showAnimationTester(showMenu)),
+    onGodMode: startGodMode,
   }));
+}
+
+function startGodMode() {
+  const setup: GameSetup = {
+    seed: 1919,
+    mapSize: 64,
+    mapType: 'arabia',
+    gameSpeed: 1,
+    discovered: true,
+    players: [
+      { name: 'God Mode', color: 0, isAI: false, aiLevel: 0 },
+      { name: 'Target Dummies', color: 1, isAI: false, aiLevel: 0 },
+    ],
+  };
+  const transport = new LocalTransport(setup);
+  startGame({ setup, you: 0, transport, debug: true });
 }
 
 function startSkirmish(cfg: SkirmishConfig) {

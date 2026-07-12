@@ -5,7 +5,7 @@
 // transport. Works identically for single-player and multiplayer.
 
 import * as THREE from 'three';
-import { AGE_NAMES, BUILDINGS, PLAYER_COLORS, UNITS, isBuildingType, totalBuildTicks } from '../shared/data';
+import { AGE_NAMES, BUILDINGS, PLAYER_COLORS, TECHS, UNITS, isBuildingType, totalBuildTicks } from '../shared/data';
 import { FP, FP_BITS, fp, toTiles } from '../shared/fixed';
 import { HASH_PERIOD } from '../shared/protocol';
 import { World } from '../shared/sim';
@@ -83,6 +83,7 @@ export class GameClient {
   readonly pings: { x: number; y: number; t: number }[] = [];
   fps = 60;
   desynced = false;
+  debugMode = false;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -119,7 +120,7 @@ export class GameClient {
       loadUnitModel(t, o, 1).catch(() => null),
     ])));
     tick('Units');
-    await Promise.all((Object.keys(BUILDINGS) as BuildingTypeId[]).flatMap((t) =>
+    await Promise.all((Object.keys(BUILDINGS) as BuildingTypeId[]).filter((t) => t !== 'woodwall' && t !== 'stonewall').flatMap((t) =>
       owners.map((o) => loadModel(buildingModelPath(t, o)).catch(() => null))));
     await Promise.all(CONSTRUCTION_MODELS.map((m) => loadModel(m).catch(() => null)));
     await loadRubbleModel().catch(() => null);
@@ -774,7 +775,7 @@ export class GameClient {
     this.placing = type;
     this.wallStart = null;
     const color = this.world.players[this.you].color;
-    void loadModel(buildingModelPath(type, color)).then((m) => {
+    void loadBuildingModels(type, color).then(({ finalModel: m }) => {
       if (this.placing !== type) return;
       const obj = m.scene.clone(true);
       const d = BUILDINGS[type];
@@ -870,6 +871,62 @@ export class GameClient {
   revealMap() {
     this.world.visibility[this.you].fill(2);
     this.terrain.updateFog(this.world.visibility[this.you]);
+  }
+
+  enableGodMode() {
+    this.debugMode = true;
+    this.debugSetAge(2);
+    this.debugAddResources();
+    this.debugUnlockAll();
+    this.revealMap();
+  }
+
+  debugAddResources() {
+    const stock = this.world.players[this.you].stock;
+    stock.food = stock.wood = stock.gold = stock.stone = 99999;
+  }
+
+  debugSetAge(age: number) {
+    this.world.players[this.you].age = Math.max(0, Math.min(2, age | 0));
+  }
+
+  debugUnlockAll() {
+    const player = this.world.players[this.you];
+    for (const tech of Object.keys(TECHS) as TechId[]) player.techs[tech] = true;
+    player.age = 2;
+  }
+
+  debugSpawnUnit(type: UnitTypeId, count = 1, owner = this.you) {
+    const centerX = fp(this.renderer.focus.x);
+    const centerY = fp(this.renderer.focus.z);
+    for (let index = 0; index < Math.min(25, count); index++) {
+      const angle = index * 2.4;
+      this.world.createUnit(owner, type, centerX + fp(Math.cos(angle) * (1 + index * 0.08)), centerY + fp(Math.sin(angle) * (1 + index * 0.08)));
+    }
+  }
+
+  debugSpawnBuilding(type: BuildingTypeId, owner = this.you) {
+    const data = BUILDINGS[type];
+    const originX = Math.round(this.renderer.focus.x - data.w / 2);
+    const originY = Math.round(this.renderer.focus.z - data.h / 2);
+    for (let radius = 0; radius < 12; radius++) {
+      for (let y = originY - radius; y <= originY + radius; y++) {
+        for (let x = originX - radius; x <= originX + radius; x++) {
+          if (!this.world.canPlaceBuilding(this.you, type, x, y)) continue;
+          this.world.createBuilding(owner, type, x, y, true);
+          return;
+        }
+      }
+    }
+    this.cb.onToast('No free test location near the camera.', true);
+  }
+
+  debugCompleteAndHeal() {
+    for (const entity of this.world.entities.values()) {
+      if (entity.owner !== this.you) continue;
+      entity.hp = entity.maxHp;
+      if (entity.kind === 'building') entity.buildProgress = totalBuildTicks(entity.type as BuildingTypeId);
+    }
   }
 
   // --- camera helpers ----------------------------------------------------------

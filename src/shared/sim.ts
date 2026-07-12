@@ -125,7 +125,7 @@ export class World {
       order: 'idle', orderX: 0, orderY: 0, targetId: 0, engagedId: 0,
       path: [], repath: 0, attackCd: 0, swingTick: 0,
       carry: 0, carryKind: 'food', gatherTimer: 0, queuedOrders: [],
-      buildProgress: 0, trainQueue: [], rallyX: -1, rallyY: -1, rallyTargetId: 0,
+      buildProgress: 0, trainQueue: [], rallyX: -1, rallyY: -1, rallyTargetId: 0, rallyResource: '',
       tileX: 0, tileY: 0, amount: 0,
       fromId: 0, projT: 0, projDur: 0, srcX: 0, srcY: 0, splash: 0, dmg: 0,
       garrisonedIn: 0, garrisonedIds: [], lastCombatTick: -100000,
@@ -420,6 +420,13 @@ export class World {
         b.rallyX = cmd.x;
         b.rallyY = cmd.y;
         b.rallyTargetId = cmd.target ?? 0;
+        b.rallyResource = '';
+        const rallyTarget = cmd.target ? this.entities.get(cmd.target) : null;
+        if (rallyTarget && this.isGatherable(player, rallyTarget)) {
+          b.rallyResource = rallyTarget.kind === 'building'
+            ? 'food'
+            : RESOURCE_NODES[rallyTarget.type as keyof typeof RESOURCE_NODES].gives;
+        }
         break;
       }
       case 'stop': {
@@ -608,6 +615,18 @@ export class World {
     this.players[b.owner].stats.unitsTrained++;
     this.ev('unitTrained', u.x, u.y, { ent: u.id, entType: type, player: b.owner });
 
+    // Resource rallies persist as a category even after the chosen node is depleted.
+    if (u.type === 'villager' && b.rallyResource) {
+      u.carryKind = b.rallyResource;
+      const target = this.entities.get(b.rallyTargetId);
+      if (target && this.isGatherable(b.owner, target)) {
+        this.startOrder(u, { order: 'gather', x: target.x, y: target.y, targetId: target.id });
+      } else {
+        this.startOrder(u, { order: 'move', x: b.rallyX, y: b.rallyY, targetId: 0 });
+        u.queuedOrders.push({ order: 'gather', x: b.rallyX, y: b.rallyY, targetId: 0 });
+      }
+      return;
+    }
     // send to rally point
     if (b.rallyTargetId) {
       const t = this.entities.get(b.rallyTargetId);
@@ -1329,6 +1348,7 @@ export class World {
       mix(e.carry + e.amount * 64 + e.buildProgress);
       mix(e.attackCd + e.swingTick * 512);
       mix(e.trainQueue.length + (e.trainQueue.length ? e.trainQueue[0].progress << 3 : 0));
+      mix(e.rallyTargetId + (RESOURCE_INDEX[e.rallyResource] << 20));
     }
     return h >>> 0;
   }
@@ -1337,6 +1357,8 @@ export class World {
 const ORDER_INDEX: Record<Entity['order'], number> = {
   idle: 0, move: 1, attackmove: 2, attack: 3, gather: 4, build: 5,
 };
+
+const RESOURCE_INDEX: Record<Resource | '', number> = { '': 0, food: 1, wood: 2, gold: 3, stone: 4 };
 
 const NEIGHBOR_OFFSETS: readonly (readonly [number, number])[] = [
   [0, 0], [1, 0], [0, 1], [1, 1], [-1, 1],

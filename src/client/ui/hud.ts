@@ -12,7 +12,7 @@ import { audio } from '../audio';
 import { drawResourceIcon, getClip, glyphIcon, renderModelIcon } from '../assets';
 import type { GameClient } from '../game';
 import { loadModel, instantiate } from '../assets';
-import { buildingModelPath } from '../render/buildings';
+import { buildingModelPath, makeWallModel } from '../render/buildings';
 import { modelPathFor } from '../render/units';
 import { applyTeamColor } from '../assets';
 import { fitTo } from '../render/units';
@@ -51,6 +51,7 @@ export class Hud {
     this.buildMinimap();
     this.buildPanel();
     this.buildChat();
+    if (this.game.debugMode) this.buildDebugPanel();
     this.renderMinimapBase();
     this.refresh();
     this.update(0.05);
@@ -426,6 +427,15 @@ export class Hud {
     const key = `cmd:${type}:${color}`;
     const cached = this.unitIconCache.get(key);
     if (cached) return cached;
+    if (type === 'woodwall' || type === 'stonewall') {
+      const url = renderModelIcon(key, () => {
+        const object = instantiate(makeWallModel(type), false);
+        fitTo(object, 1, false);
+        return object;
+      });
+      this.unitIconCache.set(key, url);
+      return url;
+    }
     void loadModel(buildingModelPath(type, color)).then((m) => {
       const url = renderModelIcon(key, () => {
         const o = instantiate(m, false);
@@ -473,6 +483,53 @@ export class Hud {
         onClick: () => this.game.enterPlacement(b),
       });
     }
+  }
+
+  private buildDebugPanel() {
+    const win = makeWindow('God Mode Tools', { closable: false, draggable: true, className: 'debug-tools-window' });
+    const owner = el('select') as HTMLSelectElement;
+    owner.append(el('option', { value: String(this.game.you), text: 'Spawn: Player' }));
+    const enemy = this.game.world.players.find((player) => player.id !== this.game.you);
+    if (enemy) owner.append(el('option', { value: String(enemy.id), text: 'Spawn: Enemy' }));
+
+    const unit = el('select') as HTMLSelectElement;
+    for (const [id, data] of Object.entries(UNITS) as [UnitTypeId, typeof UNITS[UnitTypeId]][]) {
+      unit.appendChild(el('option', { value: id, text: data.name }));
+    }
+    const spawnOne = el('button', { text: 'Spawn 1' });
+    spawnOne.addEventListener('click', () => this.game.debugSpawnUnit(unit.value as UnitTypeId, 1, Number(owner.value)));
+    const spawnTen = el('button', { text: 'Spawn 10' });
+    spawnTen.addEventListener('click', () => this.game.debugSpawnUnit(unit.value as UnitTypeId, 10, Number(owner.value)));
+
+    const building = el('select') as HTMLSelectElement;
+    for (const [id, data] of Object.entries(BUILDINGS) as [BuildingTypeId, typeof BUILDINGS[BuildingTypeId]][]) {
+      building.appendChild(el('option', { value: id, text: data.name }));
+    }
+    const spawnBuilding = el('button', { text: 'Spawn Building' });
+    spawnBuilding.addEventListener('click', () => this.game.debugSpawnBuilding(building.value as BuildingTypeId, Number(owner.value)));
+
+    const age = el('select') as HTMLSelectElement;
+    AGE_NAMES.forEach((name, index) => age.appendChild(el('option', { value: String(index), text: name })));
+    age.value = '2';
+    age.addEventListener('change', () => this.game.debugSetAge(Number(age.value)));
+
+    const resources = el('button', { text: 'Refill Resources' });
+    resources.addEventListener('click', () => this.game.debugAddResources());
+    const upgrades = el('button', { text: 'Unlock All Upgrades' });
+    upgrades.addEventListener('click', () => this.game.debugUnlockAll());
+    const finish = el('button', { text: 'Complete + Heal All' });
+    finish.addEventListener('click', () => this.game.debugCompleteAndHeal());
+    const reveal = el('button', { text: 'Reveal Map' });
+    reveal.addEventListener('click', () => this.game.revealMap());
+
+    win.body.append(
+      owner,
+      el('div', { class: 'debug-tool-row' }, unit, spawnOne, spawnTen),
+      el('div', { class: 'debug-tool-row' }, building, spawnBuilding),
+      el('div', { class: 'debug-tool-row' }, el('label', { text: 'Age' }), age),
+      el('div', { class: 'debug-tool-grid' }, resources, upgrades, finish, reveal),
+    );
+    this.root.appendChild(win.root);
   }
 
   private posePortrait(object: THREE.Object3D) {

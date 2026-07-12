@@ -61,6 +61,19 @@ export function centerOnGround(obj: THREE.Object3D) {
   obj.position.y -= box.min.y;
 }
 
+export function findHandSlot(object: THREE.Object3D, side: 'left' | 'right'): THREE.Object3D | undefined {
+  const suffix = side === 'left' ? 'l' : 'r';
+  const exact = object.getObjectByName(`handslot.${suffix}`) ?? object.getObjectByName(`hand.${suffix}`);
+  if (exact) return exact;
+  let hand: THREE.Object3D | undefined;
+  object.traverse((child) => {
+    if (hand) return;
+    const name = child.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (name === `handslot${suffix}` || name === `hand${suffix}` || name.endsWith(`handslot${suffix}`)) hand = child;
+  });
+  return hand;
+}
+
 export function modelPathFor(type: string, owner: number, entId: number): string {
   const v = UNIT_VISUALS[type];
   return v.model
@@ -98,7 +111,7 @@ export class UnitView {
     if (v.rig) applyTeamColor(obj, ent.type, ent.owner);
     this.group.add(obj);
     if (v.weapon) void loadModel(v.weapon).then((weaponModel) => {
-      const hand = obj.getObjectByName('handslot.r') ?? obj.getObjectByName('hand.r');
+      const hand = findHandSlot(obj, 'right');
       if (!hand) return;
       const weapon = instantiate(weaponModel, false);
       hand.add(weapon);

@@ -67,6 +67,7 @@ export interface Entity {
   rallyX: number;
   rallyY: number;
   rallyTargetId: number;
+  rallyResource: Resource | '';
   tileX: number;           // top-left tile of footprint
   tileY: number;
 

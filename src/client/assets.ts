@@ -144,6 +144,10 @@ export function getClip(name: string): THREE.AnimationClip | undefined {
   return animLibrary.get(name);
 }
 
+export function getAnimationClips(): THREE.AnimationClip[] {
+  return [...animLibrary.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 // ---------------------------------------------------------------------------
 // Team colors: remap accent hues in character textures to the player color
 // ---------------------------------------------------------------------------

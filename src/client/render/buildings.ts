@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { BUILDINGS, totalBuildTicks } from '../../shared/data';
 import type { BuildingTypeId, Entity } from '../../shared/types';
-import { instantiate, loadModel, type LoadedModel } from '../assets';
+import { instantiate, loadModel, ps1ify, type LoadedModel } from '../assets';
 import { BUILDING_VISUALS, CONSTRUCTION_MODELS, FLAG_MODEL, RUBBLE_MODEL } from '../visuals';
 import { COLOR_KEYS } from '../../shared/data';
 import { centerOnGround, fitTo } from './units';
@@ -12,6 +12,24 @@ import { centerOnGround, fitTo } from './units';
 export function buildingModelPath(type: string, owner: number): string {
   const v = BUILDING_VISUALS[type];
   return v.model.replace(/\{c\}/g, COLOR_KEYS[owner] ?? 'blue');
+}
+
+export function makeWallModel(type: string): LoadedModel {
+  const scene = new THREE.Group();
+  const stone = type === 'stonewall';
+  const material = new THREE.MeshLambertMaterial({ color: stone ? 0x777b78 : 0x76502d });
+  ps1ify(material);
+  const base = new THREE.Mesh(new THREE.BoxGeometry(0.98, stone ? 0.9 : 0.72, 0.98), material);
+  base.position.y = stone ? 0.45 : 0.36;
+  scene.add(base);
+  const trimMaterial = new THREE.MeshLambertMaterial({ color: stone ? 0x929793 : 0x4b311d });
+  ps1ify(trimMaterial);
+  for (const y of stone ? [1] : [0.22, 0.58]) {
+    const trim = new THREE.Mesh(new THREE.BoxGeometry(1, stone ? 0.2 : 0.09, 1), trimMaterial);
+    trim.position.y = y;
+    scene.add(trim);
+  }
+  return { scene, animations: [] };
 }
 
 export class BuildingView {
@@ -130,6 +148,10 @@ export class RubbleView {
 }
 
 export async function loadBuildingModels(type: string, owner: number) {
+  if (type === 'woodwall' || type === 'stonewall') {
+    const phases = await Promise.all(CONSTRUCTION_MODELS.map((path) => loadModel(path)));
+    return { finalModel: makeWallModel(type), phases, flag: null };
+  }
   const [finalModel, ...phases] = await Promise.all([
     loadModel(buildingModelPath(type, owner)),
     ...CONSTRUCTION_MODELS.map((p) => loadModel(p)),

@@ -92,6 +92,23 @@ describe('gameplay flows', () => {
     expect(w.players[0].pop).toBe(before + 1);
   });
 
+  it('town-center resource rallies survive depletion and retarget the same resource category', () => {
+    const w = makeWorld();
+    const tc = firstOwn(w, 0, (entity) => entity.type === 'towncenter');
+    const chosenTree = nearestNode(w, 'tree', tc.x, tc.y);
+    w.applyCommand(0, { t: 'rally', building: tc.id, x: chosenTree.x, y: chosenTree.y, target: chosenTree.id });
+    expect(tc.rallyResource).toBe('wood');
+    w.entities.delete(chosenTree.id);
+    tickN(w, 1);
+    const existing = new Set([...w.entities.values()].filter((entity) => entity.kind === 'unit' && entity.owner === 0).map((entity) => entity.id));
+    w.applyCommand(0, { t: 'train', building: tc.id, unit: 'villager' });
+    tickN(w, UNITS.villager.trainTime + 700);
+    const trained = [...w.entities.values()].find((entity) => entity.kind === 'unit' && entity.owner === 0 && !existing.has(entity.id));
+    expect(trained?.carryKind).toBe('wood');
+    expect(trained?.order).toBe('gather');
+    expect(w.entities.get(trained!.targetId)?.type).toBe('tree');
+  });
+
   it('militia beats a villager in a straight fight', () => {
     const w = makeWorld();
     const villager = firstOwn(w, 0, (e) => e.kind === 'unit');

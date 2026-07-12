@@ -118,51 +118,6 @@ body {
   align-items: center;
 }
 
-/* fake taskbar */
-.taskbar {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 30px;
-  background: silver;
-  box-shadow: inset 0 1px 0 #fff, inset 0 2px 0 #dfdfdf, 0 -1px 0 #000;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 4px;
-  z-index: 50;
-}
-
-.taskbar .start-button {
-  height: 24px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-weight: bold;
-  padding: 0 8px;
-}
-
-.taskbar .tray {
-  margin-left: auto;
-  height: 24px;
-  padding: 0 10px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  box-shadow: inset 1px 1px 0 #808080, inset -1px -1px 0 #fff;
-  font-size: 11px;
-}
-
-.taskbar .task-item {
-  height: 24px;
-  padding: 0 10px;
-  max-width: 200px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
 /* --- HUD ----------------------------------------------------------------- */
 
 #hud {
@@ -583,4 +538,86 @@ kbd {
   box-shadow: 1px 1px 0 #fff inset;
   padding: 0 3px;
   font-size: 10px;
+}
+
+.debug-context-menu {
+  position: fixed;
+  z-index: 500;
+  display: none;
+  flex-direction: column;
+  width: 225px;
+  padding: 3px;
+}
+
+.debug-context-menu button {
+  width: 100%;
+  text-align: left;
+  min-height: 24px;
+}
+
+.animation-tester-window .window-body {
+  display: flex;
+  gap: 8px;
+}
+
+.animation-tester-canvas {
+  width: 640px;
+  height: 430px;
+  image-rendering: pixelated;
+  border: 2px inset #fff;
+  cursor: grab;
+}
+
+.animation-tester-controls {
+  width: 225px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.tester-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tester-field select,
+.tester-field input {
+  width: 100%;
+}
+
+.tester-status {
+  min-height: 72px;
+  padding: 6px;
+  line-height: 1.35;
+}
+
+.debug-tools-window {
+  position: absolute;
+  left: 8px;
+  top: 38px;
+  width: 620px;
+  z-index: 45;
+}
+
+.debug-tools-window .window-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.debug-tool-row,
+.debug-tool-grid {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.debug-tool-row select {
+  flex: 1;
+}
+
+.debug-tool-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
 }

@@ -37,17 +37,21 @@ const IDENTITY_PLACEMENT: EquipmentPlacement = {
   hand: 'right', position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
 };
 
-export const DEFAULT_EQUIPMENT_PLACEMENTS: Record<string, EquipmentPlacement> = {
-  villager: structuredClone(IDENTITY_PLACEMENT),
-  barbarian: structuredClone(IDENTITY_PLACEMENT),
-  knight: structuredClone(IDENTITY_PLACEMENT),
-  bowman: { ...structuredClone(IDENTITY_PLACEMENT), hand: 'left' },
-  crossbowman: structuredClone(IDENTITY_PLACEMENT),
-  bruiser: structuredClone(IDENTITY_PLACEMENT),
-  vanguard: structuredClone(IDENTITY_PLACEMENT),
+const X90_PLACEMENT: EquipmentPlacement = {
+  hand: 'right', position: [0, 0, 0], rotation: [90, 0, 0], scale: [1, 1, 1],
 };
 
-const placementKey = (type: string) => `aoe19-equipment-v2-${type}`;
+export const DEFAULT_EQUIPMENT_PLACEMENTS: Record<string, EquipmentPlacement> = {
+  villager: structuredClone(X90_PLACEMENT),
+  barbarian: structuredClone(X90_PLACEMENT),
+  knight: structuredClone(X90_PLACEMENT),
+  bowman: { ...structuredClone(X90_PLACEMENT), hand: 'left' },
+  crossbowman: structuredClone(IDENTITY_PLACEMENT),
+  bruiser: structuredClone(X90_PLACEMENT),
+  vanguard: structuredClone(X90_PLACEMENT),
+};
+
+const placementKey = (type: string) => `aoe19-equipment-v3-${type}`;
 
 export function kayKitHandForEquipment(path: string): 'left' | 'right' {
   const name = path.split('/').pop()?.toLowerCase() ?? '';
